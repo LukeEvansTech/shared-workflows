@@ -22,13 +22,14 @@ on:
 permissions:
   contents: read
   statuses: write
+  pull-requests: write
 
 jobs:
   lint:
     uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
 ```
 
-> **Why the `permissions:` block?** GitHub's default `GITHUB_TOKEN` grants only `read` in modern repos. The reusable workflow declares `statuses: write` so super-linter can post per-linter check statuses. Callers must grant equal-or-greater permissions, otherwise the runner refuses to start (`startup_failure`). The block above is the minimum.
+> **Why the `permissions:` block?** GitHub's default `GITHUB_TOKEN` grants only `read` in modern repos. The reusable workflow declares `statuses: write` (per-linter check statuses) and uses `pull-requests: write` for super-linter's PR summary comment. Callers must grant equal-or-greater permissions, otherwise the runner refuses to start (`startup_failure`). The block above is the minimum.
 
 ### Inputs
 

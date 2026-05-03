@@ -96,6 +96,7 @@ on:
 permissions:
   contents: read
   statuses: write
+  pull-requests: write
 
 jobs:
   lint:
