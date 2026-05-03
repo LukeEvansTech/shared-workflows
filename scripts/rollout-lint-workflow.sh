@@ -110,11 +110,17 @@ mapfile -t REPOS < <(gh repo list "$OWNER" --limit 200 \
 
 echo "Found ${#REPOS[@]} repos."
 
+# Central repo is special — it IS the workflow target, not a caller.
+readonly CENTRAL_REPO="shared-workflows"
+
 for line in "${REPOS[@]}"; do
   IFS=$'\t' read -r name archived fork default_branch primary_lang <<< "$line"
 
   if [[ -n "$ONLY_REPO" && "$name" != "$ONLY_REPO" ]]; then continue; fi
 
+  if [[ "$name" == "$CENTRAL_REPO" ]]; then
+    SKIPPED_ALREADY_HAS+=("$name (central repo — uses local self-reference)"); continue
+  fi
   if [[ "$archived" == "true" ]]; then
     SKIPPED_ARCHIVED+=("$name"); continue
   fi
@@ -158,23 +164,30 @@ for line in "${REPOS[@]}"; do
     SKIPPED_ALREADY_HAS+=("$name"); continue
   fi
 
-  # Detect lint workflows that need attention (read-only — safe in dry-run)
+  # Detect replaceable meta-linter workflows (read-only — safe in dry-run)
   replaceable=$(detect_replaceable_lint_workflows "$repo_dir" || true)
-  coexist=$(detect_coexist_lint_workflows "$repo_dir" || true)
 
   # Dry-run summary path: classify but don't act
   if [[ "$DRY_RUN" -eq 1 ]]; then
     classification="would onboard cleanly"
+    actions=()
     if [[ -n "$replaceable" ]]; then
-      classification="would replace meta-linter ($(echo "$replaceable" | tr '\n' ',' | sed 's/,$//'))"
+      while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        actions+=("delete $(basename "$f")")
+      done <<< "$replaceable"
     fi
-    if [[ -n "$coexist" ]]; then
-      coexist_short=$(echo "$coexist" | tr '\n' ',' | sed 's/,$//')
-      if [[ -n "$replaceable" ]]; then
-        classification="$classification + coexist-rename ($coexist_short)"
+    if [[ -f "$repo_dir/.github/workflows/lint.yml" ]] && \
+         ! grep -q 'LukeEvansTech/shared-workflows' "$repo_dir/.github/workflows/lint.yml"; then
+      if workflow_has_deploy_steps "$repo_dir/.github/workflows/lint.yml"; then
+        actions+=("MANUAL: lint.yml has deploy steps")
       else
-        classification="would coexist-rename ($coexist_short)"
+        new_name=$(classify_bespoke_filename "$repo_dir/.github/workflows/lint.yml")
+        actions+=("rename lint.yml -> $new_name")
       fi
+    fi
+    if [[ ${#actions[@]} -gt 0 ]]; then
+      classification="${actions[*]}"
     fi
     ONBOARDED+=("$name :: $classification")
     continue

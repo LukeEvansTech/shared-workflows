@@ -7,14 +7,17 @@
 
 set -euo pipefail
 
-# Path patterns that indicate an existing third-party meta-linter workflow.
-# These are intended to be REPLACED by super-linter (per user directive).
-# Match by content rather than filename — file names vary.
-readonly REPLACEABLE_LINT_PATTERN='\b(mega-linter|megalinter)\b'
+# An existing meta-linter caller — match the `uses:` action line specifically
+# so we don't accidentally match passing comments (e.g. a super-linter file
+# with leftover MegaLinter comments). These files are DELETED and replaced.
+# Matches MegaLinter, the standalone super-linter action (NOT our reusable
+# workflow caller — that's detected separately by has_super_linter_caller),
+# and a few common all-in-one linter actions.
+readonly REPLACEABLE_USES_PATTERN='^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*(oxsecurity/megalinter|nvuillam/mega-linter|super-linter/super-linter|github/super-linter)'
 
-# Path patterns that indicate a pure-lint single-tool workflow that may
-# coexist with super-linter (rename to descriptive name; never delete).
-readonly COEXIST_LINT_PATTERN='\b(super-linter|tflint|terraform[[:space:]]+(fmt|validate)|terragrunt|terrascan|checkov|psscriptanalyzer|pylint|ruff|eslint|hadolint|ansible-lint|stylelint|markdownlint|reviewdog|tfsec|bicep[[:space:]]+build|az[[:space:]]+bicep|psrule|terraform-docs)\b'
+# Pure-lint single-tool workflows that may coexist with super-linter.
+# Detected by single-tool action references in the workflow file.
+readonly COEXIST_USES_PATTERN='^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*(terraform-linters/setup-tflint|aquasecurity/tfsec-action|aquasecurity/trivy-action|bridgecrewio/checkov-action|tenable/terrascan-action|microsoft/ps-rule|hashicorp/setup-terraform|terraform-docs/gh-actions|reviewdog/action-actionlint|reviewdog/action-shellcheck|hadolint/hadolint-action|stylelint-actions|psscriptanalyzer|powershell-actions/check-psscriptanalyzer|ansible/ansible-lint|peter-evans/setup-bicep)'
 
 # Detect existing MegaLinter (or other replaceable meta-linters) workflows.
 # Echoes one filename per line. Exit 0 if any match; 1 otherwise.
@@ -30,7 +33,15 @@ detect_replaceable_lint_workflows() {
     return 1
   fi
   local matches
-  matches=$(grep -ilE "$REPLACEABLE_LINT_PATTERN" "${files[@]}" 2>/dev/null || true)
+  # Skip files that ARE our shared-workflow caller — those are not replaceable.
+  matches=""
+  for f in "${files[@]}"; do
+    if grep -qE "$REPLACEABLE_USES_PATTERN" "$f" 2>/dev/null && \
+       ! grep -qE 'LukeEvansTech/shared-workflows/\.github/workflows/super-linter\.yml' "$f" 2>/dev/null; then
+      matches="${matches}${f}"$'\n'
+    fi
+  done
+  matches="${matches%$'\n'}"
   if [[ -z "$matches" ]]; then
     return 1
   fi
@@ -51,7 +62,13 @@ detect_coexist_lint_workflows() {
     return 1
   fi
   local matches
-  matches=$(grep -ilE "$COEXIST_LINT_PATTERN" "${files[@]}" 2>/dev/null || true)
+  matches=""
+  for f in "${files[@]}"; do
+    if grep -qE "$COEXIST_USES_PATTERN" "$f" 2>/dev/null; then
+      matches="${matches}${f}"$'\n'
+    fi
+  done
+  matches="${matches%$'\n'}"
   if [[ -z "$matches" ]]; then
     return 1
   fi
