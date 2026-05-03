@@ -151,11 +151,15 @@ for line in "${REPOS[@]}"; do
 
   # Sync default branch
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    if ! ( cd "$repo_dir" && \
-           git fetch origin --quiet && \
-           git checkout "$default_branch" --quiet && \
-           git pull --ff-only --quiet ); then
-      ERRORS+=("$name (sync failed — possibly dirty tree or divergent history)"); continue
+    sync_err=$(cd "$repo_dir" && \
+      git fetch origin 2>&1 && \
+      git checkout "$default_branch" 2>&1 && \
+      git branch --set-upstream-to="origin/$default_branch" "$default_branch" 2>/dev/null; \
+      git merge --ff-only "origin/$default_branch" 2>&1) || sync_rc=$?
+    if [[ "${sync_rc:-0}" -ne 0 ]]; then
+      ERRORS+=("$name (sync failed: $(echo "$sync_err" | tail -1))")
+      sync_rc=0
+      continue
     fi
   fi
 
