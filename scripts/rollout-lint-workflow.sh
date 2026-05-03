@@ -236,7 +236,7 @@ for line in "${REPOS[@]}"; do
         new_path="$repo_dir/.github/workflows/$new_name"
       fi
       echo "  renaming existing lint.yml -> $new_name"
-      git mv "$target_lint" "$new_path" --quiet
+      git mv "$target_lint" "$new_path"
       # Update its top-level name: to be distinguishable
       new_display_name=$(classify_bespoke_name "$new_name")
       # Replace exactly the first 'name:' line
@@ -275,19 +275,22 @@ for line in "${REPOS[@]}"; do
         --body "Adds soft-launched super-linter via the shared reusable workflow at \`LukeEvansTech/shared-workflows@v1\`. Lint findings appear in the workflow step summary and as a PR comment; failures do not block merges. See https://github.com/LukeEvansTech/shared-workflows/blob/main/docs/spec.md.")
     fi
     echo "  PR: $pr_url"
-  )
-  rc=$?
+  ) || rc=$?
+  rc=${rc:-0}
 
   if [[ $rc -eq 99 ]]; then
     NEEDS_REVIEW+=("$name :: lint.yml has deploy steps — manual review")
+    rc=0
     continue
   fi
   if [[ $rc -ne 0 ]]; then
     ERRORS+=("$name (rollout failed with rc=$rc)")
+    rc=0
     continue
   fi
 
   ONBOARDED+=("$name")
+  rc=0
 done
 
 echo
