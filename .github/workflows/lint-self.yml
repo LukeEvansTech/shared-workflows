@@ -1,0 +1,15 @@
+name: Lint (self-test)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/super-linter.yml

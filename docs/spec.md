@@ -31,7 +31,7 @@ Two pieces; nothing else.
 
 ### 1. Central reusable workflow
 
-A new **public** repo `LukeEvansTech/.github-workflows` hosts one reusable workflow.
+A new **public** repo `LukeEvansTech/shared-workflows` hosts one reusable workflow.
 
 `.github/workflows/super-linter.yml`:
 
@@ -86,16 +86,23 @@ Each target repo gets `.github/workflows/lint.yml`:
 
 ```yaml
 name: Lint
+
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   lint:
-    uses: LukeEvansTech/.github-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
 ```
+
+The `permissions:` block is required: GitHub's modern default is `default_workflow_permissions: read`, but the reusable workflow declares `statuses: write` for super-linter. If the caller doesn't grant equal-or-greater permissions, the runner refuses to start (`startup_failure`). This was discovered during Phase 1 and is documented in lessons-learned at the bottom of this spec.
 
 For non-`main` default branches, override:
 
@@ -133,7 +140,7 @@ Super-linter natively reads linter config files (`.markdownlint.json`, `.yamllin
 
 ### Phase 0 — Build the central workflow (1 repo)
 
-- Create `LukeEvansTech/.github-workflows` (public)
+- Create `LukeEvansTech/shared-workflows` (public)
 - Author the reusable workflow with soft-launch defaults
 - Tag `v1`
 - Enable Renovate (single `renovate.json`)
@@ -238,7 +245,7 @@ After PR merge:
 | Risk | Mitigation |
 | --- | --- |
 | First-run slow (~3-5 min while super-linter docker image pulls) | Accepted — subsequent runs cache. Soft launch means slow runs don't block anyone. |
-| Cross-account public-workflow dependency: deleting/renaming `LukeEvansTech/.github-workflows` breaks every `codelooks-com` caller | Document the dependency in the repo README. Don't rename casually. |
+| Cross-account public-workflow dependency: deleting/renaming `LukeEvansTech/shared-workflows` breaks every `codelooks-com` caller | Document the dependency in the repo README. Don't rename casually. |
 | Forks diverge from upstream when we add workflows | Flagged separately — user reviews per-fork |
 | `@v1` major-version pin auto-updates | Acceptable for this use case (soft launch absorbs surprises). Repos can pin tighter (`@v1.0.3`) if desired |
 | Renovate fatigue (1 PR per super-linter release) | Concentrated on the central repo only — not 50 repos |
@@ -248,7 +255,25 @@ After PR merge:
 
 ## Open questions deferred to implementation plan
 
-- Exact repo to host this spec long-term (proposal: move into `LukeEvansTech/.github-workflows` in Phase 0)
+- Exact repo to host this spec long-term (proposal: move into `LukeEvansTech/shared-workflows` in Phase 0)
 - Whether to direct-commit to `main` or open PRs on solo-owner repos during Phase 2 (proposal: PRs by default, user can override per-repo)
 - Renovate configuration depth (proposal: start with `config:recommended` preset only)
 - PR body template content (proposal: brief explainer + link to this spec)
+
+---
+
+## Lessons learned during Phase 1 (2026-05-03)
+
+### Repo name `.github-workflows` was renamed to `shared-workflows`
+
+Originally the central repo was named `LukeEvansTech/.github-workflows` (mirroring the `.github` special-repo convention). During Phase 1 pilot validation we hit `startup_failure` on every cross-repo `uses:` call. The leading-dot name was *not* the cause (the actual cause was permissions — see below) but renaming to `shared-workflows` was kept because it's clearer: it's a normal shared repo, not a `.github`-style special repo. Tag `v1` was preserved through the rename via `gh repo rename`.
+
+### Caller `permissions:` block is required
+
+The reusable workflow declares `permissions: { contents: read, statuses: write }` at the job level. GitHub's modern repo default is `default_workflow_permissions: read`. Because the called workflow's permissions exceed what the caller's default token can grant, the runner refuses to start before any job runs (`startup_failure`, 1s duration, no billable time, `referenced_workflows` resolves correctly but `check_runs` are never created).
+
+The fix is to require every caller to declare the equivalent `permissions:` block. The plan's per-repo caller template, the `render_caller_workflow` bash function (Task 14), and the README example all include this block. A `lint-self.yml` was added to the central repo (`shared-workflows`) so the same pattern is exercised end-to-end on every PR — catching this kind of regression before it ships to caller repos.
+
+### Net effect on caller line count
+
+Caller grew from ~10 lines to ~14 lines. Acceptable trade-off for principle-of-least-privilege correctness.

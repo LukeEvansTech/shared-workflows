@@ -1,10 +1,10 @@
-# .github-workflows
+# shared-workflows
 
 Reusable GitHub Actions workflows shared across [@LukeEvansTech](https://github.com/LukeEvansTech) and [@codelooks-com](https://github.com/codelooks-com).
 
 ## super-linter
 
-Soft-launched [super-linter](https://github.com/super-linter/super-linter) as a reusable workflow. Callers add a ~10-line `lint.yml`; lint failures do **not** block CI by default.
+Soft-launched [super-linter](https://github.com/super-linter/super-linter) as a reusable workflow. Callers add a small `lint.yml`; lint failures do **not** block CI by default.
 
 ### Minimal caller (defaults: `main` branch, soft launch on, changed files only)
 
@@ -12,16 +12,23 @@ Soft-launched [super-linter](https://github.com/super-linter/super-linter) as a 
 
 ```yaml
 name: Lint
+
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   lint:
-    uses: LukeEvansTech/.github-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
 ```
+
+> **Why the `permissions:` block?** GitHub's default `GITHUB_TOKEN` grants only `read` in modern repos. The reusable workflow declares `statuses: write` so super-linter can post per-linter check statuses. Callers must grant equal-or-greater permissions, otherwise the runner refuses to start (`startup_failure`). The block above is the minimum.
 
 ### Inputs
 
@@ -39,7 +46,7 @@ jobs:
 ```yaml
 jobs:
   lint:
-    uses: LukeEvansTech/.github-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
     with:
       default-branch: master
 ```
@@ -49,7 +56,7 @@ jobs:
 ```yaml
 jobs:
   lint:
-    uses: LukeEvansTech/.github-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
     with:
       soft-launch: false
 ```
