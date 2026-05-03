@@ -1,0 +1,45 @@
+name: Super-Linter (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      default-branch:
+        description: Branch super-linter diffs against
+        type: string
+        default: main
+      validate-all-codebase:
+        description: Lint the entire codebase, not just changed files
+        type: boolean
+        default: false
+      soft-launch:
+        description: When true, lint failures do not fail the workflow
+        type: boolean
+        default: true
+      filter-regex-exclude:
+        description: Regex of paths to exclude from linting
+        type: string
+        default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build)/'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Super-Linter
+        uses: super-linter/super-linter@v8
+        continue-on-error: ${{ inputs.soft-launch }}
+        env:
+          DEFAULT_BRANCH: ${{ inputs.default-branch }}
+          VALIDATE_ALL_CODEBASE: ${{ inputs.validate-all-codebase }}
+          FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOG_LEVEL: WARN
+          SAVE_SUPER_LINTER_SUMMARY: true
+          SAVE_SUPER_LINTER_OUTPUT: true
