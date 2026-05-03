@@ -100,7 +100,7 @@ permissions:
 
 jobs:
   lint:
-    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@<sha> # v1
 ```
 
 The `permissions:` block is required: GitHub's modern default is `default_workflow_permissions: read`, but the reusable workflow declares `statuses: write` for super-linter. If the caller doesn't grant equal-or-greater permissions, the runner refuses to start (`startup_failure`). This was discovered during Phase 1 and is documented in lessons-learned at the bottom of this spec.
@@ -278,3 +278,11 @@ The fix is to require every caller to declare the equivalent `permissions:` bloc
 ### Net effect on caller line count
 
 Caller grew from ~10 lines to ~14 lines. Acceptable trade-off for principle-of-least-privilege correctness.
+
+### Phase 3 update — SHA-pin migration (2026-05-03)
+
+Zizmor's `unpinned-uses` audit flagged every caller for using `@v1` (a tag, not a SHA). We migrated to pinning the commit SHA with a trailing `# v1` comment that Renovate updates atomically with the SHA when `v1` moves on the central repo.
+
+Tradeoff: Renovate now opens one PR per caller repo when shared-workflows updates `v1`, instead of all callers tracking the floating tag silently. We accepted this — the user prefers explicit, reviewable bumps over invisible automatic ones.
+
+The rollout script auto-resolves the current `v1` SHA via `gh api`. The README's "Minimal caller" example shows `<sha>` as a literal placeholder so readers know to substitute the current SHA when copy-pasting; the script handles it for you when fanning out.

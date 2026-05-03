@@ -103,12 +103,21 @@ workflow_has_deploy_steps() {
 }
 
 # Render the per-repo caller workflow YAML.
+#
+# We pin to the commit SHA that v1 currently points to (rather than @v1
+# directly). This satisfies zizmor's unpinned-uses audit and matches the
+# GitHub-recommended security pattern. Renovate reads the trailing
+# `# v1` comment and bumps both the SHA and the comment together when
+# v1 moves on the central repo.
+#
 # Args:
 #   $1 = default branch name (e.g. main, master)
 render_caller_workflow() {
   local default_branch="$1"
+  local sha
+  sha=$(get_central_v1_sha)
   if [[ "$default_branch" == "main" ]]; then
-    cat <<'YAML'
+    cat <<YAML
 name: Lint
 
 on:
@@ -124,7 +133,7 @@ permissions:
 
 jobs:
   lint:
-    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@${sha} # v1
 YAML
   else
     cat <<YAML
@@ -143,9 +152,34 @@ permissions:
 
 jobs:
   lint:
-    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@${sha} # v1
     with:
       default-branch: ${default_branch}
 YAML
   fi
+}
+
+# Resolve the commit SHA that the central repo's v1 tag currently points to.
+# Cached in $CENTRAL_V1_SHA after first call so we don't hit the API
+# repeatedly during a single rollout.
+CENTRAL_V1_SHA=""
+get_central_v1_sha() {
+  if [[ -z "$CENTRAL_V1_SHA" ]]; then
+    CENTRAL_V1_SHA=$(gh api repos/LukeEvansTech/shared-workflows/git/refs/tags/v1 \
+      --jq 'if .object.type == "tag" then .object.sha else .object.sha end' 2>/dev/null)
+    # Annotated tags need one more dereference to get the commit SHA.
+    if [[ -n "$CENTRAL_V1_SHA" ]]; then
+      local resolved
+      resolved=$(gh api "repos/LukeEvansTech/shared-workflows/git/tags/$CENTRAL_V1_SHA" \
+        --jq '.object.sha' 2>/dev/null || true)
+      if [[ -n "$resolved" ]]; then
+        CENTRAL_V1_SHA="$resolved"
+      fi
+    fi
+    if [[ -z "$CENTRAL_V1_SHA" ]]; then
+      echo "ERROR: could not resolve LukeEvansTech/shared-workflows v1 SHA" >&2
+      exit 1
+    fi
+  fi
+  echo "$CENTRAL_V1_SHA"
 }

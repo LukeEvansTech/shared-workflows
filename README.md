@@ -26,8 +26,18 @@ permissions:
 
 jobs:
   lint:
-    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@<sha> # v1
 ```
+
+> **Why the SHA pin with `# v1` comment?** GitHub's recommended security pattern (and zizmor's `unpinned-uses` audit) requires SHA pins. The `# v1` trailing comment is a Renovate convention — Renovate bumps **both** the SHA and the comment when the `v1` tag on `shared-workflows` moves. This gives you the security of pin-to-SHA with the readability of pin-to-version.
+>
+> The rollout script (`scripts/rollout-lint-workflow.sh`) auto-resolves and inserts the current `v1` SHA when generating per-repo callers. To get the current SHA manually:
+> ```bash
+> gh api repos/LukeEvansTech/shared-workflows/git/refs/tags/v1 \
+>   --jq '.object.sha' \
+>   | xargs -I{} gh api repos/LukeEvansTech/shared-workflows/git/tags/{} \
+>   --jq '.object.sha'
+> ```
 
 > **Why the `permissions:` block?** GitHub's default `GITHUB_TOKEN` grants only `read` in modern repos. The reusable workflow declares `statuses: write` (per-linter check statuses) and uses `pull-requests: write` for super-linter's PR summary comment. Callers must grant equal-or-greater permissions, otherwise the runner refuses to start (`startup_failure`). The block above is the minimum.
 
@@ -47,7 +57,7 @@ jobs:
 ```yaml
 jobs:
   lint:
-    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@<sha> # v1
     with:
       default-branch: master
 ```
@@ -57,7 +67,7 @@ jobs:
 ```yaml
 jobs:
   lint:
-    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@v1
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@<sha> # v1
     with:
       soft-launch: false
 ```
