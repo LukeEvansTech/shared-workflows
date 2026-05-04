@@ -279,6 +279,14 @@ The fix is to require every caller to declare the equivalent `permissions:` bloc
 
 Caller grew from ~10 lines to ~14 lines. Acceptable trade-off for principle-of-least-privilege correctness.
 
+### Phase 3 — JSCPD disabled (2026-05-04)
+
+JSCPD (copy-paste detector) ships with a 0% duplicate threshold by default — flags any duplicate, including small coincidental matches across language families. Across the rollout sweep, 8+ repos had a single JSCPD-only finding, and the genuine signal was small (most flagged duplicates were either tiny stretches of boilerplate or vendored library code).
+
+JSCPD's threshold is configured via `.jscpd.json` *in the linted repo* — there's no super-linter env var to set a global threshold from the central workflow. Adding 41 stock config files just to bump one number isn't a good trade.
+
+**Decision: disable JSCPD globally (`VALIDATE_JSCPD=false`).** Repos that want duplication detection can re-enable per-repo via env override + their own `.jscpd.json`.
+
 ### Phase 3 — Biome decision (2026-05-04)
 
 Super-linter v8 enables both Biome and Prettier/ESLint/Stylelint by default, generating "X and Y are both enabled, might conflict" warnings on every run across every repo. We picked one side rather than tolerate the noise:
