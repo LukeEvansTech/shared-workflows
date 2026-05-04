@@ -258,6 +258,16 @@ for line in "${REPOS[@]}"; do
     render_caller_workflow "$default_branch" > "$repo_dir/.github/workflows/lint.yml"
     git add "$repo_dir/.github/workflows/lint.yml"
 
+    # Write per-repo .jscpd.json (threshold 10) if not already present.
+    # JSCPD's default 0% threshold is too noisy; super-linter only reads
+    # the config from the linted repo, so we ship a stock config per
+    # caller. Repo owners can edit it freely.
+    mkdir -p "$repo_dir/.github/linters"
+    if [[ ! -f "$repo_dir/.github/linters/.jscpd.json" ]]; then
+      render_jscpd_config > "$repo_dir/.github/linters/.jscpd.json"
+      git add "$repo_dir/.github/linters/.jscpd.json"
+    fi
+
     # Commit
     if git diff --cached --quiet; then
       echo "  nothing to commit (already up-to-date)"

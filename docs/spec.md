@@ -279,13 +279,13 @@ The fix is to require every caller to declare the equivalent `permissions:` bloc
 
 Caller grew from ~10 lines to ~14 lines. Acceptable trade-off for principle-of-least-privilege correctness.
 
-### Phase 3 — JSCPD disabled (2026-05-04)
+### Phase 3 — JSCPD threshold via per-repo `.jscpd.json` (2026-05-04)
 
-JSCPD (copy-paste detector) ships with a 0% duplicate threshold by default — flags any duplicate, including small coincidental matches across language families. Across the rollout sweep, 8+ repos had a single JSCPD-only finding, and the genuine signal was small (most flagged duplicates were either tiny stretches of boilerplate or vendored library code).
+JSCPD ships with a 0% duplicate threshold by default — flags any duplicate, including tiny coincidental matches. Genuine signal exists, just buried in noise.
 
-JSCPD's threshold is configured via `.jscpd.json` *in the linted repo* — there's no super-linter env var to set a global threshold from the central workflow. Adding 41 stock config files just to bump one number isn't a good trade.
+JSCPD's threshold is configured via `.jscpd.json` *in the linted repo* — there's no super-linter env var to set it globally. We chose to fix-not-ignore: the rollout script writes a stock `.github/linters/.jscpd.json` with `threshold: 10` (industry-typical) into each caller repo if one doesn't already exist. Repos can edit their own copy if they want stricter or looser thresholds.
 
-**Decision: disable JSCPD globally (`VALIDATE_JSCPD=false`).** Repos that want duplication detection can re-enable per-repo via env override + their own `.jscpd.json`.
+This adds one ~10-line config file per onboarded repo. Acceptable trade-off for keeping duplication detection on with a sensible default.
 
 ### Phase 3 — Biome decision (2026-05-04)
 

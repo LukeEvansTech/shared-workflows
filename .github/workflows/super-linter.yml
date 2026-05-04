@@ -51,11 +51,3 @@ jobs:
           # if it ever wants Biome.
           VALIDATE_BIOME_FORMAT: false
           VALIDATE_BIOME_LINT: false
-          # JSCPD's default 0% duplicate threshold is too noisy for the
-          # mostly-small infra repos in this org. JSCPD's per-config-file
-          # threshold lives inside the linted repo, so a global threshold
-          # bump is only feasible by writing a config file into every
-          # caller — too much boilerplate for the value. Repos that want
-          # duplication detection can re-enable JSCPD per-repo.
-          # See docs/spec.md "Phase 3 — JSCPD" for the rationale.
-          VALIDATE_JSCPD: false

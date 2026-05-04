@@ -159,6 +159,26 @@ YAML
   fi
 }
 
+# Render the stock .jscpd.json — copy-paste detection threshold 10%
+# (industry-typical), with common vendored/build paths excluded.
+render_jscpd_config() {
+  cat <<'JSON'
+{
+  "threshold": 10,
+  "reporters": ["consoleFull"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/.terraform/**",
+    "**/.venv/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/assets/scss/framework/**"
+  ]
+}
+JSON
+}
+
 # Resolve the commit SHA that the central repo's v1 tag currently points to.
 # Cached in $CENTRAL_V1_SHA after first call so we don't hit the API
 # repeatedly during a single rollout.
