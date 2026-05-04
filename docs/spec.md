@@ -279,6 +279,19 @@ The fix is to require every caller to declare the equivalent `permissions:` bloc
 
 Caller grew from ~10 lines to ~14 lines. Acceptable trade-off for principle-of-least-privilege correctness.
 
+### Phase 3 — Biome decision (2026-05-04)
+
+Super-linter v8 enables both Biome and Prettier/ESLint/Stylelint by default, generating "X and Y are both enabled, might conflict" warnings on every run across every repo. We picked one side rather than tolerate the noise:
+
+**Decision: disable Biome (`VALIDATE_BIOME_FORMAT=false`, `VALIDATE_BIOME_LINT=false`).**
+
+Rationale:
+- The user's repos lean infra (PowerShell, Bicep, HCL, Python) — JS/TS is a tiny fraction; Biome's strength (Rust speed on JS/TS) is largely wasted.
+- Where formatting/linting *does* run (Hugo SCSS, docs Markdown, package.json), Prettier has wider coverage. Biome's Markdown and YAML support is partial; Prettier's is mature.
+- Plugin ecosystem and Stack Overflow surface area for Prettier/ESLint/Stylelint vastly exceeds Biome.
+
+A repo can re-enable Biome per-repo via env override in its caller workflow if it ever becomes the better fit (e.g. a greenfield TS project).
+
 ### Phase 3 update — SHA-pin migration (2026-05-03)
 
 Zizmor's `unpinned-uses` audit flagged every caller for using `@v1` (a tag, not a SHA). We migrated to pinning the commit SHA with a trailing `# v1` comment that Renovate updates atomically with the SHA when `v1` moves on the central repo.

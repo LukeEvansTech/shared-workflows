@@ -44,3 +44,10 @@ jobs:
           LOG_LEVEL: WARN
           SAVE_SUPER_LINTER_SUMMARY: true
           SAVE_SUPER_LINTER_OUTPUT: true
+          # Biome is disabled in favor of Prettier + ESLint + Stylelint:
+          # broader format coverage (Markdown/YAML/SCSS/etc.), more mature
+          # plugin ecosystem. See docs/spec.md "Phase 3 — Biome decision"
+          # for the rationale. A repo can re-enable per-repo via env override
+          # if it ever wants Biome.
+          VALIDATE_BIOME_FORMAT: false
+          VALIDATE_BIOME_LINT: false
