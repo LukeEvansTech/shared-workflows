@@ -126,13 +126,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Top-level: read-only by default (CKV2_GHA_1).
 permissions:
   contents: read
-  statuses: write
-  pull-requests: write
 
 jobs:
   lint:
+    # Per-job: explicit write scopes for super-linter (least-privilege at
+    # the job, not workflow, level — zizmor excessive-permissions).
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
     uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@${sha} # v1
 YAML
   else
@@ -145,13 +150,18 @@ on:
     branches: [${default_branch}]
   workflow_dispatch:
 
+# Top-level: read-only by default (CKV2_GHA_1).
 permissions:
   contents: read
-  statuses: write
-  pull-requests: write
 
 jobs:
   lint:
+    # Per-job: explicit write scopes for super-linter (least-privilege at
+    # the job, not workflow, level — zizmor excessive-permissions).
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
     uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@${sha} # v1
     with:
       default-branch: ${default_branch}

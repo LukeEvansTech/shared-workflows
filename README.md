@@ -21,11 +21,13 @@ on:
 
 permissions:
   contents: read
-  statuses: write
-  pull-requests: write
 
 jobs:
   lint:
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
     uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@<sha> # v1
 ```
 
@@ -39,7 +41,7 @@ jobs:
 >   --jq '.object.sha'
 > ```
 
-> **Why the `permissions:` block?** GitHub's default `GITHUB_TOKEN` grants only `read` in modern repos. The reusable workflow declares `statuses: write` (per-linter check statuses) and uses `pull-requests: write` for super-linter's PR summary comment. Callers must grant equal-or-greater permissions, otherwise the runner refuses to start (`startup_failure`). The block above is the minimum.
+> **Why permissions at the job level?** Top-level `contents: read` is read-only by default (least-privilege; satisfies CHECKOV `CKV2_GHA_1`). Per-job permissions add the specific writes super-linter needs (`statuses: write` for per-linter check statuses, `pull-requests: write` for the PR summary comment). Job-level scoping satisfies zizmor's `excessive-permissions` audit — only the lint job gets the writes, no other (hypothetical) job in the same workflow would. Callers must grant equal-or-greater permissions on the lint job, otherwise the runner refuses to start (`startup_failure`).
 
 ### Inputs
 
