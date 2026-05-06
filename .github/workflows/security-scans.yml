@@ -28,6 +28,11 @@ on:
         type: string
         default: .trivyignore.yaml
 
+# Top-level: read-only by default. Each job widens as needed.
+# (Checkov CKV2_GHA_1)
+permissions:
+  contents: read
+
 jobs:
   checkov:
     if: ${{ inputs.enable-checkov }}
@@ -39,6 +44,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # Don't leave the GITHUB_TOKEN persisted in .git/config — read-only
+          # checkout is enough for SARIF emit. (zizmor: artipacked)
+          persist-credentials: false
 
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12
@@ -65,6 +74,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # Don't leave the GITHUB_TOKEN persisted in .git/config — read-only
+          # checkout is enough for SARIF emit. (zizmor: artipacked)
+          persist-credentials: false
 
       - name: Set up Trivy cache
         uses: actions/cache@v5
