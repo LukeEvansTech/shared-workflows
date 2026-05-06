@@ -1,0 +1,107 @@
+name: Security Scans (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      enable-checkov:
+        description: Run Checkov IaC scan
+        type: boolean
+        default: true
+      enable-trivy:
+        description: Run Trivy filesystem + secret + misconfig scan
+        type: boolean
+        default: true
+      checkov-frameworks:
+        description: Comma-separated Checkov frameworks to load (kubernetes, helm, terraform, dockerfile, ...)
+        type: string
+        default: kubernetes,helm
+      trivy-severity:
+        description: Trivy severity filter
+        type: string
+        default: CRITICAL,HIGH,MEDIUM
+      trivy-scanners:
+        description: Trivy scanner classes
+        type: string
+        default: vuln,secret,misconfig
+      trivyignore-file:
+        description: Path to .trivyignore.yaml relative to repo root (file may be absent)
+        type: string
+        default: .trivyignore.yaml
+
+# Top-level: read-only by default. Each job widens as needed.
+# (Checkov CKV2_GHA_1)
+permissions:
+  contents: read
+
+jobs:
+  checkov:
+    if: ${{ inputs.enable-checkov }}
+    name: Checkov (IaC Security)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Don't leave the GITHUB_TOKEN persisted in .git/config — read-only
+          # checkout is enough for SARIF emit. (zizmor: artipacked)
+          persist-credentials: false
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@9201a8e6eaa919e3444d7c4ca691896efde4f033 # v12
+        with:
+          directory: .
+          framework: ${{ inputs.checkov-frameworks }}
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          quiet: true
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+  trivy:
+    if: ${{ inputs.enable-trivy }}
+    name: Trivy (Filesystem & Secret Scan)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Don't leave the GITHUB_TOKEN persisted in .git/config — read-only
+          # checkout is enough for SARIF emit. (zizmor: artipacked)
+          persist-credentials: false
+
+      - name: Set up Trivy cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ~/.cache/trivy
+          key: ${{ runner.os }}-trivy-${{ hashFiles('**/go.sum', '**/package-lock.json', '**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-trivy-
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: ${{ inputs.trivy-severity }}
+          scanners: ${{ inputs.trivy-scanners }}
+          # `trivyignores` (one word, no dash) is the documented action input;
+          # the action does NOT auto-discover .trivyignore.yaml.
+          trivyignores: ${{ inputs.trivyignore-file }}
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy

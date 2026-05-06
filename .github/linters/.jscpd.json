@@ -1,0 +1,5 @@
+{
+  "$schema": "https://raw.githubusercontent.com/kucherenko/jscpd/master/packages/core/schema/jscpd.schema.json",
+  "threshold": 5,
+  "ignore": ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**"]
+}
