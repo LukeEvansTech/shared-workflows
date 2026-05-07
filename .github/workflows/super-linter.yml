@@ -62,3 +62,12 @@ jobs:
           VALIDATE_CHECKOV: false
           VALIDATE_TRIVY: false
           VALIDATE_GITLEAKS: false
+          # JSCPD disabled: a 2026-05-07 survey across 18 LukeEvansTech /
+          # codelooks-com repos using this shared workflow found 77 unique
+          # clone pairs and 0 genuine refactor candidates. The duplication
+          # is overwhelmingly bjw-s app-template boilerplate, sibling-app
+          # variants (e.g. sonarr/sonarr4k/sonarranime), and intra-file
+          # YAML repeats — all intentional in IaC/config repos. Repos that
+          # actually want copy-paste detection are better served by
+          # SonarCloud / PMD-CPD at PR-diff scope.
+          VALIDATE_JSCPD: false
