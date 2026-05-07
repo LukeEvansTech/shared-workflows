@@ -19,6 +19,15 @@ on:
         description: Regex of paths to exclude from linting
         type: string
         default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build)/'
+      validate-kubernetes-kubeconform:
+        description: >-
+          Run kubeconform against Kubernetes manifests. Set false on Flux GitOps
+          repos where raw-source validation produces false positives — kustomize
+          transforms, var substitution, and component merging happen later, so
+          those repos validate via `kustomize build | kubeconform` outside
+          super-linter.
+        type: boolean
+        default: true
 
 jobs:
   lint:
@@ -53,6 +62,11 @@ jobs:
           # if it ever wants Biome.
           VALIDATE_BIOME_FORMAT: false
           VALIDATE_BIOME_LINT: false
+          # Kubeconform is opt-out per-repo: useful for plain-K8s repos, noisy
+          # for Flux GitOps repos that need `kustomize build | kubeconform`
+          # against a CRD-aware schema catalog instead. Default true preserves
+          # current behavior for callers that don't set the input.
+          VALIDATE_KUBERNETES_KUBECONFORM: ${{ inputs.validate-kubernetes-kubeconform }}
           # Security scanners are owned by the shared security-scans.yml
           # reusable workflow (Checkov + Trivy with SARIF → GitHub Code
           # Scanning, plus a per-repo `.trivyignore.yaml`). Disabling them
