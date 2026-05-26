@@ -3,7 +3,7 @@
 
 Clones each into a temp dir, runs zensical_drift.py against it, collects results.
 """
-import subprocess, json, tempfile, sys
+import subprocess, tempfile, sys
 from pathlib import Path
 
 REPOS_PUBLISHING = [
