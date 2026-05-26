@@ -131,9 +131,11 @@ def apply(repo: str, publish: bool, allow_no_pages: bool, dry_run: bool) -> None
 
 def update_renovate(repo: str, dry_run: bool) -> None:
     r = gh(["api", f"repos/{repo}/contents/renovate.json"])
-    canonical = json.loads((TEMPLATES / "renovate.json").read_text())
+    canonical_text = (TEMPLATES / "renovate.json").read_text()
+    canonical = json.loads(canonical_text)
     if r.returncode != 0:
-        upsert_file(repo, "renovate.json", json.dumps(canonical, indent=2) + "\n",
+        # No renovate.json yet — write canonical verbatim
+        upsert_file(repo, "renovate.json", canonical_text,
                     "chore: add canonical renovate.json", dry_run)
         return
     existing_raw = base64.b64decode(json.loads(r.stdout)["content"]).decode()
@@ -152,9 +154,45 @@ def update_renovate(repo: str, dry_run: bool) -> None:
         print(f"  renovate.json: NO-CHANGE")
         return
     existing["extends"] = extends
-    new_content = json.dumps(existing, indent=2) + "\n"
+    # If the only keys are $schema + extends with values matching canonical, write canonical verbatim
+    # (this is the common case for all 18 repos and avoids prettier formatting drift)
+    if set(existing.keys()) <= {"$schema", "extends"} and existing.get("$schema") == canonical.get("$schema") and existing["extends"] == canonical["extends"]:
+        new_content = canonical_text
+    else:
+        # Repo has custom keys — preserve them, format extends inline to match prettier
+        # Use json.dumps then post-process to inline short arrays
+        new_content = _format_renovate(existing)
     upsert_file(repo, "renovate.json", new_content,
                 "chore(renovate): add helpers:pinGitHubActionDigests", dry_run)
+
+
+def _format_renovate(data: dict) -> str:
+    """Format renovate.json matching prettier defaults: 2-space indent, short arrays inline.
+
+    Specifically inlines top-level `extends` array since prettier collapses arrays
+    that fit within the default print width (80 chars).
+    """
+    # Build manually: each top-level key on its own line, extends inline if short
+    lines = ["{"]
+    keys = list(data.keys())
+    for i, k in enumerate(keys):
+        v = data[k]
+        # Format value
+        if k == "extends" and isinstance(v, list) and all(isinstance(x, str) for x in v):
+            inline = "[" + ", ".join(json.dumps(x) for x in v) + "]"
+            line = f'  {json.dumps(k)}: {inline}'
+        else:
+            # Generic JSON encode, indent=2 then re-indent
+            encoded = json.dumps(v, indent=2)
+            # Re-indent every line by 2 spaces after the first
+            encoded_lines = encoded.splitlines()
+            encoded_lines = [encoded_lines[0]] + ["  " + l for l in encoded_lines[1:]]
+            line = f'  {json.dumps(k)}: ' + "\n".join(encoded_lines)
+        if i < len(keys) - 1:
+            line += ","
+        lines.append(line)
+    lines.append("}")
+    return "\n".join(lines) + "\n"
 
 
 def main() -> int:
