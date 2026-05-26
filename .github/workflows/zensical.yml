@@ -16,9 +16,13 @@ on:
         type: string
         default: docs
       link-check:
-        description: Run lychee link check against the built site
+        description: >-
+          Run lychee link check against external (https/http) links in the
+          built site. Defaults false: lychee cannot resolve root-relative
+          internal links that MkDocs emits when site_url has a path prefix,
+          so enable only after confirming no such errors exist for the repo.
         type: boolean
-        default: true
+        default: false
       link-check-soft-launch:
         description: When true, lychee failures do not fail the workflow
         type: boolean
