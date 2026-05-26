@@ -21,13 +21,17 @@ on:
         default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build)/'
       validate-kubernetes-kubeconform:
         description: >-
-          Run kubeconform against Kubernetes manifests. Set false on Flux GitOps
-          repos where raw-source validation produces false positives — kustomize
-          transforms, var substitution, and component merging happen later, so
-          those repos validate via `kustomize build | kubeconform` outside
-          super-linter.
+          Run kubeconform against Kubernetes manifests. Defaults false because
+          docs repos contain no K8s manifests. Set true on plain-K8s repos.
+          Flux GitOps repos should keep this false and use
+          `kustomize build | kubeconform` against a CRD-aware schema catalog
+          instead, as kustomize transforms and var substitution happen outside
+          super-linter. Note: super-linter v8 requires all VALIDATE_X flags
+          to be the same polarity (all true or all false); mixing true/false
+          is not supported. This default (false) ensures that all explicit
+          VALIDATE_X env vars in the step use the exclude (false) polarity.
         type: boolean
-        default: true
+        default: false
 
 jobs:
   lint:
@@ -62,10 +66,11 @@ jobs:
           # if it ever wants Biome.
           VALIDATE_BIOME_FORMAT: false
           VALIDATE_BIOME_LINT: false
-          # Kubeconform is opt-out per-repo: useful for plain-K8s repos, noisy
-          # for Flux GitOps repos that need `kustomize build | kubeconform`
-          # against a CRD-aware schema catalog instead. Default true preserves
-          # current behavior for callers that don't set the input.
+          # Kubeconform is opt-in per-repo (default false): useful for plain-K8s
+          # repos. Flux GitOps repos should use `kustomize build | kubeconform`
+          # against a CRD-aware schema catalog. Default false keeps all
+          # VALIDATE_X flags in the exclude (false) polarity — super-linter v8
+          # requires consistent polarity across all VALIDATE_X env vars.
           VALIDATE_KUBERNETES_KUBECONFORM: ${{ inputs.validate-kubernetes-kubeconform }}
           # Security scanners are owned by the shared security-scans.yml
           # reusable workflow (Checkov + Trivy with SARIF → GitHub Code
