@@ -1,0 +1,72 @@
+name: Zensical (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        description: Deploy to GitHub Pages. Set false for build-only repos.
+        type: boolean
+        default: true
+      python-version:
+        description: Python version for the build
+        type: string
+        default: "3.14"
+      working-directory:
+        description: Path to the zensical project (where zensical.toml lives)
+        type: string
+        default: docs
+      link-check:
+        description: Run lychee link check against the built site
+        type: boolean
+        default: true
+      link-check-soft-launch:
+        description: When true, lychee failures do not fail the workflow
+        type: boolean
+        default: true
+      vale:
+        description: Run Vale prose linter (requires .vale.ini in repo root)
+        type: boolean
+        default: false
+      vale-soft-launch:
+        description: When true, Vale failures do not fail the workflow
+        type: boolean
+        default: true
+      strict:
+        description: Pass --strict to zensical build
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v6
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+          cache-dependency-path: ${{ inputs.working-directory }}/requirements.txt
+
+      - name: Install zensical
+        working-directory: ${{ inputs.working-directory }}
+        run: pip install -r requirements.txt
+
+      - name: Build site
+        working-directory: ${{ inputs.working-directory }}
+        run: zensical build${{ inputs.strict && ' --strict' || '' }}
+
+      - name: Configure Pages
+        if: inputs.publish
+        uses: actions/configure-pages@e1c1afe2b3d094c66fbe49fcec3252b6a2af6695 # v6
+
+      - name: Upload artifact
+        if: inputs.publish
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v5
+        with:
+          path: ${{ inputs.working-directory }}/site
