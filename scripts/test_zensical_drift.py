@@ -122,3 +122,19 @@ def test_pages_check_allow_no_pages():
         capture_output=True, text=True,
     )
     assert "[pages]" not in (result.stdout + result.stderr)
+
+
+def test_theme_baseline_fails():
+    result = run_drift("bad-theme")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "[theme]" in out
+    assert 'theme.name' in out
+
+
+def test_layout_fails():
+    result = run_drift("bad-layout")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "[layout]" in out
+    assert "docs/docs" in out

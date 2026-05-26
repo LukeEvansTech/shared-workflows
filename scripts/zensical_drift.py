@@ -136,11 +136,11 @@ def check_theme_baseline(repo_root: Path) -> None:
     if not cfg.exists():
         return
     text = cfg.read_text()
-    if 'name = "material"' not in text:
+    if not re.search(r'^\s*name\s*=\s*"material"', text, re.M):
         fail("theme", str(cfg), 'theme.name must be "material"')
-    if 'variant = "modern"' not in text:
+    if not re.search(r'^\s*variant\s*=\s*"modern"', text, re.M):
         fail("theme", str(cfg), 'theme.variant must be "modern"')
-    if 'language = "en"' not in text:
+    if not re.search(r'^\s*language\s*=\s*"en"', text, re.M):
         fail("theme", str(cfg), 'theme.language must be "en"')
 
 
@@ -182,7 +182,17 @@ def check_markdownlint(repo_root: Path) -> None:
 def check_pages(repo: str | None, allow_no_pages: bool, allow_build_type_legacy: bool) -> None:
     if not repo:
         return
-    r = subprocess.run(["gh", "api", f"repos/{repo}/pages"], capture_output=True, text=True)
+    try:
+        r = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pages"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError:
+        print(f"::warning::gh CLI not found; pages check skipped", file=sys.stderr)
+        return
+    except subprocess.TimeoutExpired:
+        fail("pages", f"repos/{repo}/pages", "gh CLI timed out after 30s")
+        return
     if r.returncode != 0:
         if allow_no_pages:
             return
@@ -195,7 +205,7 @@ def check_pages(repo: str | None, allow_no_pages: bool, allow_build_type_legacy:
         return
     build_type = data.get("build_type")
     if build_type == "legacy" and not allow_build_type_legacy:
-        fail("pages", f"repos/{repo}/pages", f"Pages build_type is `legacy`; standard requires `workflow`")
+        fail("pages", f"repos/{repo}/pages", "Pages build_type is `legacy`; standard requires `workflow`")
 
 
 def main() -> int:
