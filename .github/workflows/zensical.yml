@@ -107,10 +107,15 @@ jobs:
         id: lychee
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
         with:
+          # Scan only http/https links — skip file:// and root-relative
+          # internal refs. MkDocs emits root-relative hrefs (e.g.
+          # /M365LabelSync/foo/) when site_url has a path prefix; those
+          # are browser-resolved at runtime and cannot be validated
+          # against a local build directory without a running server.
           args: >-
             --cache --max-cache-age 1d --retry-wait-time 60 --max-retries 1
             --no-progress
-            --root-dir ${{ inputs.working-directory }}/site
+            --scheme https --scheme http
             ${{ inputs.working-directory }}/site
         continue-on-error: ${{ inputs.link-check-soft-launch == true }}
 
