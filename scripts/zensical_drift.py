@@ -73,12 +73,67 @@ def check_palette(repo_root: Path) -> None:
         fail("palette", str(cfg), f"need a [project.theme.palette.toggle] table for each palette entry; found {len(toggle_tables)}")
 
 
+REQUIRED_WORKFLOWS = {
+    "docs.yml": r"LukeEvansTech/shared-workflows/\.github/workflows/zensical\.yml",
+    "lint.yml": r"LukeEvansTech/shared-workflows/\.github/workflows/super-linter\.yml",
+    "docs-standard-check.yml": r"LukeEvansTech/shared-workflows/\.github/workflows/zensical-drift-check\.yml",
+}
+
+
+def check_workflows(repo_root: Path) -> None:
+    wf_dir = repo_root / ".github" / "workflows"
+    if not wf_dir.exists():
+        fail("workflows", str(wf_dir), ".github/workflows/ missing")
+        return
+    for wf_name, expected_reusable in REQUIRED_WORKFLOWS.items():
+        wf = wf_dir / wf_name
+        if not wf.exists():
+            fail("workflows", str(wf), f"required workflow `{wf_name}` is missing")
+            continue
+        text = wf.read_text()
+        # Shape check: must call the expected reusable workflow
+        if not re.search(rf"uses:\s*{expected_reusable}@[a-f0-9]{{40}}", text):
+            display = expected_reusable.replace("\\", "")
+            fail("workflows", str(wf), f"`{wf_name}` must call `{display}@<SHA>` (40-hex SHA-pinned)")
+        # SHA-pinning check: every `uses:` line must reference a 40-hex SHA (not a tag)
+        for line_num, line in enumerate(text.splitlines(), 1):
+            m = re.match(r'\s*uses:\s*([^\s#]+)', line)
+            if not m:
+                continue
+            ref = m.group(1)
+            if "@" not in ref:
+                fail("workflows", f"{wf}:{line_num}", f"uses without ref: {ref}")
+                continue
+            tag_part = ref.split("@", 1)[1]
+            if not re.fullmatch(r"[a-f0-9]{40}", tag_part):
+                fail("workflows", f"{wf}:{line_num}", f"action must be SHA-pinned (40-hex); found `@{tag_part}`")
+
+
+def check_site_url(repo_root: Path) -> None:
+    cfg = repo_root / "docs" / "zensical.toml"
+    if not cfg.exists():
+        return
+    text = cfg.read_text()
+    m = re.search(r'^\s*site_url\s*=\s*"([^"]+)"', text, re.M)
+    if not m:
+        return
+    url = m.group(1)
+    if url.startswith("http"):
+        host = url.split("//", 1)[1].split("/", 1)[0]
+        if host.lower() != host:
+            fail("site_url", str(cfg), f"site_url host must be lowercase; found `{host}`")
+        if "lukevanstech" in host.lower() and "lukeevanstech" not in host.lower():
+            fail("site_url", str(cfg), f"site_url has typo `lukevanstech` (should be `lukeevanstech`); found `{host}`")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True, type=Path)
     args = parser.parse_args()
     check_pin(args.repo_root)
     check_palette(args.repo_root)
+    check_workflows(args.repo_root)
+    check_site_url(args.repo_root)
     for line in FAILURES:
         print(line)
     return 1 if FAILURES else 0

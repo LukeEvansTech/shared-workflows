@@ -51,3 +51,17 @@ def test_good_fixture_passes_palette_only():
     result = run_drift("good")
     out = result.stdout + result.stderr
     assert "[palette]" not in out
+
+
+def test_tag_pinned_workflow_fails():
+    result = run_drift("bad-tag-pinned")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "SHA" in out or "sha-pinn" in out.lower() or "tag-pinned" in out.lower() or "@v" in out
+
+
+def test_uppercase_host_fails():
+    result = run_drift("bad-uppercase-host")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "site_url" in out.lower() or "host" in out.lower() or "lowercase" in out.lower()
