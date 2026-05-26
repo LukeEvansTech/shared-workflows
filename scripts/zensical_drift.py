@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
+import json as _json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -154,8 +155,8 @@ def check_renovate(repo_root: Path) -> None:
         fail("renovate", str(r), "renovate.json is missing")
         return
     try:
-        data = json.loads(r.read_text())
-    except json.JSONDecodeError as e:
+        data = _json.loads(r.read_text())
+    except _json.JSONDecodeError as e:
         fail("renovate", str(r), f"renovate.json is not valid JSON: {e}")
         return
     extends = data.get("extends", [])
@@ -178,9 +179,31 @@ def check_markdownlint(repo_root: Path) -> None:
         fail("markdownlint", str(ml), "content differs from canonical templates/.markdownlint.yml; run scripts/sync_markdownlint.py")
 
 
+def check_pages(repo: str | None, allow_no_pages: bool, allow_build_type_legacy: bool) -> None:
+    if not repo:
+        return
+    r = subprocess.run(["gh", "api", f"repos/{repo}/pages"], capture_output=True, text=True)
+    if r.returncode != 0:
+        if allow_no_pages:
+            return
+        fail("pages", f"repos/{repo}/pages", "Pages is not enabled (pass --allow-no-pages for build-only repos)")
+        return
+    try:
+        data = _json.loads(r.stdout)
+    except _json.JSONDecodeError:
+        fail("pages", f"repos/{repo}/pages", "could not parse Pages API response")
+        return
+    build_type = data.get("build_type")
+    if build_type == "legacy" and not allow_build_type_legacy:
+        fail("pages", f"repos/{repo}/pages", f"Pages build_type is `legacy`; standard requires `workflow`")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True, type=Path)
+    parser.add_argument("--repo", help="owner/name for Pages API check (optional)")
+    parser.add_argument("--allow-no-pages", action="store_true")
+    parser.add_argument("--allow-build-type-legacy", action="store_true")
     args = parser.parse_args()
     check_pin(args.repo_root)
     check_palette(args.repo_root)
@@ -190,6 +213,7 @@ def main() -> int:
     check_site_url(args.repo_root)
     check_renovate(args.repo_root)
     check_markdownlint(args.repo_root)
+    check_pages(args.repo, args.allow_no_pages, args.allow_build_type_legacy)
     for line in FAILURES:
         print(line)
     return 1 if FAILURES else 0

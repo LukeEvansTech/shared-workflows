@@ -85,3 +85,36 @@ def test_markdownlint_hash_mismatch_fails():
 def test_good_fixture_passes_overall():
     result = run_drift("good")
     assert result.returncode == 0, f"good fixture should pass; got:\n{result.stdout}\n{result.stderr}"
+
+
+import shutil
+
+
+def has_gh():
+    return shutil.which("gh") is not None
+
+
+@pytest.mark.skipif(not has_gh(), reason="gh CLI not available in this env")
+def test_pages_check_skipped_when_no_repo_arg():
+    result = run_drift("good")
+    assert "[pages]" not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(not has_gh(), reason="gh CLI not available in this env")
+def test_pages_check_passes_on_known_workflow_repo():
+    """Live test against M365LabelSync which has build_type=workflow as of 2026-05-26."""
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--repo-root", str(FIXTURES / "good"), "--repo", "LukeEvansTech/M365LabelSync"],
+        capture_output=True, text=True,
+    )
+    assert "[pages]" not in (result.stdout + result.stderr)
+
+
+@pytest.mark.skipif(not has_gh(), reason="gh CLI not available in this env")
+def test_pages_check_allow_no_pages():
+    """With --allow-no-pages, an empty Pages response should not fail."""
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--repo-root", str(FIXTURES / "good"), "--repo", "LukeEvansTech/lgwebos", "--allow-no-pages"],
+        capture_output=True, text=True,
+    )
+    assert "[pages]" not in (result.stdout + result.stderr)
