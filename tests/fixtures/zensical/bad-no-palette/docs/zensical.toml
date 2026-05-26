@@ -1,0 +1,27 @@
+[project]
+site_name = "Fixture Good"
+site_description = "Conformant fixture"
+site_author = "Tests"
+site_url = "https://example.github.io/good/"
+copyright = "Copyright 2026"
+repo_url = "https://github.com/example/good"
+repo_name = "example/good"
+edit_uri = "edit/main/docs/docs/"
+
+[project.theme]
+name = "material"
+variant = "modern"
+language = "en"
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[markdown_extensions]
+admonition = {}
+toc = { permalink = true }
+
+[markdown_extensions.pymdownx]
+highlight = { anchor_linenums = true, line_spans = "__span", pygments_lang_class = true }
+inlinehilite = {}
+snippets = {}
+superfences = {}
