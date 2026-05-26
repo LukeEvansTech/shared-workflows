@@ -21,30 +21,32 @@ def test_loose_pin_fails():
     result = run_drift("bad-loose-pin")
     assert result.returncode != 0
     out = result.stdout + result.stderr
-    assert "requirements.txt" in out
-    assert "zensical>=" in out or "must use ==" in out or "exact version" in out
+    assert "[pin]" in out
+    assert "exact version" in out or "zensical==" in out
 
 
 def test_flat_toggle_fails():
     result = run_drift("bad-flat-toggle")
     assert result.returncode != 0
     out = result.stdout + result.stderr
-    assert "toggle" in out.lower()
-    assert "nested" in out.lower() or "flat" in out.lower()
+    assert "[palette]" in out
+    assert "nested" in out.lower() and "toggle" in out.lower()
 
 
 def test_missing_media_fails():
     result = run_drift("bad-missing-media")
     assert result.returncode != 0
     out = result.stdout + result.stderr
-    assert "media" in out.lower() or "prefers-color-scheme" in out.lower()
+    assert "[palette]" in out
+    assert "prefers-color-scheme" in out
 
 
 def test_no_palette_fails():
     result = run_drift("bad-no-palette")
     assert result.returncode != 0
     out = result.stdout + result.stderr
-    assert "palette" in out.lower()
+    assert "[palette]" in out
+    assert "2 [[project.theme.palette]] entries" in out or "need at least" in out
 
 
 def test_good_fixture_passes_palette_only():
@@ -57,14 +59,16 @@ def test_tag_pinned_workflow_fails():
     result = run_drift("bad-tag-pinned")
     assert result.returncode != 0
     out = result.stdout + result.stderr
-    assert "SHA" in out or "sha-pinn" in out.lower() or "tag-pinned" in out.lower() or "@v" in out
+    assert "[workflows]" in out
+    assert "SHA-pinned" in out or "must be SHA-pinned" in out or "@v1" in out
 
 
 def test_uppercase_host_fails():
     result = run_drift("bad-uppercase-host")
     assert result.returncode != 0
     out = result.stdout + result.stderr
-    assert "site_url" in out.lower() or "host" in out.lower() or "lowercase" in out.lower()
+    assert "[site_url]" in out
+    assert "lowercase" in out or "host" in out.lower()
 
 
 def test_renovate_missing_pin_digest_fails():
