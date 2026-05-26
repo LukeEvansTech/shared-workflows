@@ -107,8 +107,12 @@ jobs:
         id: lychee
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
         with:
-          args: --cache --max-cache-age 1d --retry-wait-time 60 --max-retries 1 --no-progress ${{ inputs.working-directory }}/site
-        continue-on-error: ${{ inputs.link-check-soft-launch }}
+          args: >-
+            --cache --max-cache-age 1d --retry-wait-time 60 --max-retries 1
+            --no-progress
+            --root-dir ${{ inputs.working-directory }}/site
+            ${{ inputs.working-directory }}/site
+        continue-on-error: ${{ inputs.link-check-soft-launch == true }}
 
   prose:
     needs: build
@@ -124,7 +128,7 @@ jobs:
         uses: errata-ai/vale-action@d89dee975228ae261d22c15adcd03578634d429c # v2
         with:
           files: ${{ inputs.working-directory }}/docs
-        continue-on-error: ${{ inputs.vale-soft-launch }}
+        continue-on-error: ${{ inputs.vale-soft-launch == true }}
 
   deploy:
     needs: build
