@@ -109,3 +109,19 @@ jobs:
         with:
           args: --cache --max-cache-age 1d --retry-wait-time 60 --max-retries 1 --no-progress ${{ inputs.working-directory }}/site
         continue-on-error: ${{ inputs.link-check-soft-launch }}
+
+  prose:
+    needs: build
+    if: inputs.vale
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Vale
+        uses: errata-ai/vale-action@d89dee975228ae261d22c15adcd03578634d429c # v2
+        with:
+          files: ${{ inputs.working-directory }}/docs
+        continue-on-error: ${{ inputs.vale-soft-launch }}
