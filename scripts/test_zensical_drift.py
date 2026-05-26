@@ -65,3 +65,23 @@ def test_uppercase_host_fails():
     assert result.returncode != 0
     out = result.stdout + result.stderr
     assert "site_url" in out.lower() or "host" in out.lower() or "lowercase" in out.lower()
+
+
+def test_renovate_missing_pin_digest_fails():
+    result = run_drift("bad-renovate")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "renovate" in out.lower()
+    assert "pinGitHubActionDigests" in out or "digest" in out.lower()
+
+
+def test_markdownlint_hash_mismatch_fails():
+    result = run_drift("bad-markdownlint")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "markdownlint" in out.lower()
+
+
+def test_good_fixture_passes_overall():
+    result = run_drift("good")
+    assert result.returncode == 0, f"good fixture should pass; got:\n{result.stdout}\n{result.stderr}"

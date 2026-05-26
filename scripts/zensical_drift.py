@@ -9,9 +9,13 @@ Spec: docs/superpowers/specs/2026-05-26-zensical-docs-standard-design.md
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 import sys
 from pathlib import Path
+
+TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 FAILURES: list[str] = []
 
@@ -126,14 +130,66 @@ def check_site_url(repo_root: Path) -> None:
             fail("site_url", str(cfg), f"site_url has typo `lukevanstech` (should be `lukeevanstech`); found `{host}`")
 
 
+def check_theme_baseline(repo_root: Path) -> None:
+    cfg = repo_root / "docs" / "zensical.toml"
+    if not cfg.exists():
+        return
+    text = cfg.read_text()
+    if 'name = "material"' not in text:
+        fail("theme", str(cfg), 'theme.name must be "material"')
+    if 'variant = "modern"' not in text:
+        fail("theme", str(cfg), 'theme.variant must be "modern"')
+    if 'language = "en"' not in text:
+        fail("theme", str(cfg), 'theme.language must be "en"')
+
+
+def check_layout(repo_root: Path) -> None:
+    if not (repo_root / "docs" / "docs").is_dir():
+        fail("layout", str(repo_root / "docs" / "docs"), "docs/docs/ directory is missing (canonical content path)")
+
+
+def check_renovate(repo_root: Path) -> None:
+    r = repo_root / "renovate.json"
+    if not r.exists():
+        fail("renovate", str(r), "renovate.json is missing")
+        return
+    try:
+        data = json.loads(r.read_text())
+    except json.JSONDecodeError as e:
+        fail("renovate", str(r), f"renovate.json is not valid JSON: {e}")
+        return
+    extends = data.get("extends", [])
+    if "config:recommended" not in extends:
+        fail("renovate", str(r), "extends must include `config:recommended`")
+    if "helpers:pinGitHubActionDigests" not in extends:
+        fail("renovate", str(r), "extends must include `helpers:pinGitHubActionDigests`")
+
+
+def check_markdownlint(repo_root: Path) -> None:
+    ml = repo_root / ".markdownlint.yml"
+    canonical = TEMPLATES_DIR / ".markdownlint.yml"
+    if not ml.exists():
+        fail("markdownlint", str(ml), ".markdownlint.yml is missing at repo root")
+        return
+    if not canonical.exists():
+        print(f"::warning::canonical .markdownlint.yml not found at {canonical}; hash check skipped", file=sys.stderr)
+        return
+    if hashlib.sha256(ml.read_bytes()).hexdigest() != hashlib.sha256(canonical.read_bytes()).hexdigest():
+        fail("markdownlint", str(ml), "content differs from canonical templates/.markdownlint.yml; run scripts/sync_markdownlint.py")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True, type=Path)
     args = parser.parse_args()
     check_pin(args.repo_root)
     check_palette(args.repo_root)
+    check_theme_baseline(args.repo_root)
+    check_layout(args.repo_root)
     check_workflows(args.repo_root)
     check_site_url(args.repo_root)
+    check_renovate(args.repo_root)
+    check_markdownlint(args.repo_root)
     for line in FAILURES:
         print(line)
     return 1 if FAILURES else 0
