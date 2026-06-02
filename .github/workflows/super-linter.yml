@@ -32,14 +32,6 @@ on:
           VALIDATE_X env vars in the step use the exclude (false) polarity.
         type: boolean
         default: false
-      slim:
-        description: >-
-          Use the slim super-linter image (~1.5GB vs ~3.5GB full). Drops only:
-          Rustfmt, Rust Clippy, ARM-TTK, PSScriptAnalyzer (PowerShell), and
-          `dotnet` (.NET) commands. Set false on repos that contain those
-          languages so the missing linters don't silently skip.
-        type: boolean
-        default: true
 
 jobs:
   lint:
@@ -48,45 +40,6 @@ jobs:
       contents: read
       statuses: write
       pull-requests: write
-    env:
-      DEFAULT_BRANCH: ${{ inputs.default-branch }}
-      VALIDATE_ALL_CODEBASE: ${{ inputs.validate-all-codebase }}
-      FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      LOG_LEVEL: WARN
-      SAVE_SUPER_LINTER_SUMMARY: true
-      SAVE_SUPER_LINTER_OUTPUT: true
-      # Biome is disabled in favor of Prettier + ESLint + Stylelint:
-      # broader format coverage (Markdown/YAML/SCSS/etc.), more mature
-      # plugin ecosystem. See docs/spec.md "Phase 3 — Biome decision"
-      # for the rationale. A repo can re-enable per-repo via env override
-      # if it ever wants Biome.
-      VALIDATE_BIOME_FORMAT: false
-      VALIDATE_BIOME_LINT: false
-      # Kubeconform is opt-in per-repo (default false): useful for plain-K8s
-      # repos. Flux GitOps repos should use `kustomize build | kubeconform`
-      # against a CRD-aware schema catalog. Default false keeps all
-      # VALIDATE_X flags in the exclude (false) polarity — super-linter v8
-      # requires consistent polarity across all VALIDATE_X env vars.
-      VALIDATE_KUBERNETES_KUBECONFORM: ${{ inputs.validate-kubernetes-kubeconform }}
-      # Security scanners are owned by the shared security-scans.yml
-      # reusable workflow (Checkov + Trivy with SARIF → GitHub Code
-      # Scanning, plus a per-repo `.trivyignore.yaml`). Disabling them
-      # here avoids running the same scanners twice and keeps
-      # super-linter focused on style/format. GitLeaks overlaps with
-      # Trivy's secret scanner and GitHub's native secret scanning.
-      VALIDATE_CHECKOV: false
-      VALIDATE_TRIVY: false
-      VALIDATE_GITLEAKS: false
-      # JSCPD disabled: a 2026-05-07 survey across 18 LukeEvansTech /
-      # codelooks-com repos using this shared workflow found 77 unique
-      # clone pairs and 0 genuine refactor candidates. The duplication
-      # is overwhelmingly bjw-s app-template boilerplate, sibling-app
-      # variants (e.g. sonarr/sonarr4k/sonarranime), and intra-file
-      # YAML repeats — all intentional in IaC/config repos. Repos that
-      # actually want copy-paste detection are better served by
-      # SonarCloud / PMD-CPD at PR-diff scope.
-      VALIDATE_JSCPD: false
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -95,17 +48,45 @@ jobs:
           # SARIF emit / linting only needs read-only checkout. (zizmor: artipacked)
           persist-credentials: false
 
-      # GitHub Actions does not allow expressions in step-level `uses:`, so the
-      # slim/full choice is two conditional steps instead of a templatized
-      # action ref. Same job name + same env, so callers with branch-protection
-      # status checks on `lint / lint` stay green either way. Same SHA pin
-      # because /slim is a sub-action in the same super-linter release.
-      - name: Super-Linter (slim)
-        if: ${{ inputs.slim }}
-        uses: super-linter/super-linter/slim@9e863354e3ff62e0727d37183162c4a88873df41 # v8
-        continue-on-error: ${{ inputs.soft-launch }}
-
-      - name: Super-Linter (full)
-        if: ${{ !inputs.slim }}
+      - name: Super-Linter
         uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8
         continue-on-error: ${{ inputs.soft-launch }}
+        env:
+          DEFAULT_BRANCH: ${{ inputs.default-branch }}
+          VALIDATE_ALL_CODEBASE: ${{ inputs.validate-all-codebase }}
+          FILTER_REGEX_EXCLUDE: ${{ inputs.filter-regex-exclude }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOG_LEVEL: WARN
+          SAVE_SUPER_LINTER_SUMMARY: true
+          SAVE_SUPER_LINTER_OUTPUT: true
+          # Biome is disabled in favor of Prettier + ESLint + Stylelint:
+          # broader format coverage (Markdown/YAML/SCSS/etc.), more mature
+          # plugin ecosystem. See docs/spec.md "Phase 3 — Biome decision"
+          # for the rationale. A repo can re-enable per-repo via env override
+          # if it ever wants Biome.
+          VALIDATE_BIOME_FORMAT: false
+          VALIDATE_BIOME_LINT: false
+          # Kubeconform is opt-in per-repo (default false): useful for plain-K8s
+          # repos. Flux GitOps repos should use `kustomize build | kubeconform`
+          # against a CRD-aware schema catalog. Default false keeps all
+          # VALIDATE_X flags in the exclude (false) polarity — super-linter v8
+          # requires consistent polarity across all VALIDATE_X env vars.
+          VALIDATE_KUBERNETES_KUBECONFORM: ${{ inputs.validate-kubernetes-kubeconform }}
+          # Security scanners are owned by the shared security-scans.yml
+          # reusable workflow (Checkov + Trivy with SARIF → GitHub Code
+          # Scanning, plus a per-repo `.trivyignore.yaml`). Disabling them
+          # here avoids running the same scanners twice and keeps
+          # super-linter focused on style/format. GitLeaks overlaps with
+          # Trivy's secret scanner and GitHub's native secret scanning.
+          VALIDATE_CHECKOV: false
+          VALIDATE_TRIVY: false
+          VALIDATE_GITLEAKS: false
+          # JSCPD disabled: a 2026-05-07 survey across 18 LukeEvansTech /
+          # codelooks-com repos using this shared workflow found 77 unique
+          # clone pairs and 0 genuine refactor candidates. The duplication
+          # is overwhelmingly bjw-s app-template boilerplate, sibling-app
+          # variants (e.g. sonarr/sonarr4k/sonarranime), and intra-file
+          # YAML repeats — all intentional in IaC/config repos. Repos that
+          # actually want copy-paste detection are better served by
+          # SonarCloud / PMD-CPD at PR-diff scope.
+          VALIDATE_JSCPD: false
