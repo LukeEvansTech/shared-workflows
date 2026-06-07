@@ -48,6 +48,23 @@ jobs:
           # SARIF emit / linting only needs read-only checkout. (zizmor: artipacked)
           persist-credentials: false
 
+      - name: Install Ansible collections for syntax-check
+        # ansible-lint inside super-linter runs `ansible-playbook --syntax-check`
+        # on every playbook, which fails if a referenced collection can't resolve
+        # (e.g. ansibleguy.opnsense.*, ansible.netcommon.cli_command). Repos that
+        # ship an ansible/requirements.yml get those collections installed into
+        # ansible/collections — the conventional ansible.cfg collections_path,
+        # already excluded from linting via the repo's .ansible-lint exclude_paths.
+        # No-ops for docs-only repos (the vast majority of callers).
+        shell: bash
+        run: |
+          if [ -f ansible/requirements.yml ]; then
+            echo "ansible/requirements.yml found — installing collections"
+            ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
+          else
+            echo "no ansible/requirements.yml — skipping ansible collection install"
+          fi
+
       - name: Super-Linter
         uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8
         continue-on-error: ${{ inputs.soft-launch }}
