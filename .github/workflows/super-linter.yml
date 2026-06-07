@@ -18,7 +18,7 @@ on:
       filter-regex-exclude:
         description: Regex of paths to exclude from linting
         type: string
-        default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build)/'
+        default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build|collections)/'
       validate-kubernetes-kubeconform:
         description: >-
           Run kubeconform against Kubernetes manifests. Defaults false because
@@ -60,7 +60,11 @@ jobs:
         run: |
           if [ -f ansible/requirements.yml ]; then
             echo "ansible/requirements.yml found — installing collections"
-            ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
+            # --force installs into -p even when a collection is already present
+            # elsewhere on the runner (e.g. ansible.netcommon ships with the
+            # hosted image, so without --force it is "skipped" and never lands
+            # in ansible/collections where super-linter's container looks).
+            ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections --force
           else
             echo "no ansible/requirements.yml — skipping ansible collection install"
           fi
