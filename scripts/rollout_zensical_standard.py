@@ -18,6 +18,28 @@ from pathlib import Path
 TEMPLATES = Path(__file__).parent.parent / "templates"
 SHARED_WORKFLOWS_REPO = "LukeEvansTech/shared-workflows"
 
+# Single source of truth for which repos are build-only. Build-only repos must
+# roll out with publish=false + allow-no-pages=true; forgetting the flags
+# silently regressed 5 of 6 of them on 2026-06-07 (the publishing default ran
+# Configure Pages, which fails when Pages is disabled). resolve_publish_flags()
+# auto-applies the right defaults so an operator can't forget.
+from audit_zensical_standard import REPOS_BUILD_ONLY
+
+
+def resolve_publish_flags(
+    repo: str, publish_arg: bool | None, allow_no_pages_arg: bool
+) -> tuple[bool, bool]:
+    """Resolve the effective (publish, allow_no_pages) for a repo.
+
+    Build-only repos (REPOS_BUILD_ONLY) default to publish=false and always get
+    allow-no-pages=true. An explicit --publish/--no-publish (publish_arg is not
+    None) still wins. Unknown repos preserve the historical publish=true default.
+    """
+    is_build_only = repo in REPOS_BUILD_ONLY
+    publish = (not is_build_only) if publish_arg is None else publish_arg
+    allow_no_pages = bool(allow_no_pages_arg) or is_build_only
+    return publish, allow_no_pages
+
 
 def gh(args: list[str], input: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(["gh"] + args, capture_output=True, text=True, input=input, timeout=30)
@@ -199,13 +221,23 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--repo", required=True, help="owner/name")
     publish_group = p.add_mutually_exclusive_group()
-    publish_group.add_argument("--publish", dest="publish", action="store_true", default=True)
-    publish_group.add_argument("--no-publish", dest="publish", action="store_false")
+    publish_group.add_argument("--publish", dest="publish", action="store_const", const=True,
+                               default=None,
+                               help="force publish=true. Default: auto (false for build-only repos)")
+    publish_group.add_argument("--no-publish", dest="publish", action="store_const", const=False,
+                               help="force publish=false (build-only)")
     p.add_argument("--allow-no-pages", action="store_true",
-                   help="add `allow-no-pages: true` to drift-check caller (for build-only repos)")
+                   help="add `allow-no-pages: true` to drift-check caller "
+                        "(auto-enabled for build-only repos)")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
-    apply(args.repo, args.publish, args.allow_no_pages, args.dry_run)
+    publish, allow_no_pages = resolve_publish_flags(args.repo, args.publish, args.allow_no_pages)
+    if args.repo in REPOS_BUILD_ONLY and args.publish is None:
+        print(f"note: {args.repo} is build-only -> publish=false, allow-no-pages=true (auto)")
+    elif args.repo in REPOS_BUILD_ONLY and args.publish is True:
+        print(f"WARNING: --publish forced on build-only repo {args.repo}; "
+              "Configure Pages will fail unless Pages is enabled")
+    apply(args.repo, publish, allow_no_pages, args.dry_run)
     return 0
 
 
