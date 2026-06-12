@@ -160,10 +160,14 @@ def check_renovate(repo_root: Path) -> None:
         fail("renovate", str(r), f"renovate.json is not valid JSON: {e}")
         return
     extends = data.get("extends", [])
-    if "config:recommended" not in extends:
-        fail("renovate", str(r), "extends must include `config:recommended`")
-    if "helpers:pinGitHubActionDigests" not in extends:
-        fail("renovate", str(r), "extends must include `helpers:pinGitHubActionDigests`")
+    if "github>LukeEvansTech/renovate-config" not in extends:
+        fail(
+            "renovate",
+            str(r),
+            "extends must include `github>LukeEvansTech/renovate-config` "
+            "(the shared config; it bundles config:recommended and "
+            "pinGitHubActionDigests via home-operations/renovate-presets)",
+        )
 
 
 def check_markdownlint(repo_root: Path) -> None:
