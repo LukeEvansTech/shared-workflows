@@ -71,12 +71,12 @@ def test_uppercase_host_fails():
     assert "lowercase" in out or "host" in out.lower()
 
 
-def test_renovate_missing_pin_digest_fails():
+def test_renovate_missing_shared_config_fails():
     result = run_drift("bad-renovate")
     assert result.returncode != 0
     out = result.stdout + result.stderr
     assert "renovate" in out.lower()
-    assert "pinGitHubActionDigests" in out or "digest" in out.lower()
+    assert "github>LukeEvansTech/renovate-config" in out or "renovate-config" in out
 
 
 def test_markdownlint_hash_mismatch_fails():
