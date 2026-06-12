@@ -1,16 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    ":semanticCommits"
-  ],
+  "extends": ["github>LukeEvansTech/renovate-config"],
   "schedule": ["before 6am on monday"],
-  "labels": ["dependencies"],
   "packageRules": [
-    {
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["major"],
-      "labels": ["dependencies", "breaking"]
-    }
+    { "matchManagers": ["github-actions"], "matchUpdateTypes": ["major"], "labels": ["dependencies", "breaking"] }
   ]
 }
