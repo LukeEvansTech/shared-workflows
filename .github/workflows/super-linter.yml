@@ -69,6 +69,30 @@ jobs:
             echo "no ansible/requirements.yml — skipping ansible collection install"
           fi
 
+      - name: Stage canonical markdownlint config for super-linter
+        # super-linter v8 reads the markdownlint config from LINTER_RULES_PATH
+        # (.github/linters) as MARKDOWN_CONFIG_FILE — it does NOT auto-discover a
+        # repo-root .markdownlint.yml. Our zensical repos keep the drift-checked
+        # canonical config at the repo root (read by editors, pre-commit, and the
+        # docs-standard drift check), so without this step super-linter silently
+        # falls back to its stricter bundled default (e.g. MD013 line-length 400).
+        # Copy the root config into .github/linters and set MARKDOWN_CONFIG_FILE
+        # so super-linter honours it (MD013 off, MD033/MD041/MD060 off, MD024
+        # siblings-only). No-op for callers without a root .markdownlint.yml —
+        # they keep super-linter's bundled default.
+        shell: bash
+        run: |
+          if [ -f .markdownlint.yml ]; then
+            mkdir -p .github/linters
+            cp .markdownlint.yml .github/linters/.markdownlint.yml
+            # Only point super-linter at the config when it actually exists, so
+            # callers without a root .markdownlint.yml keep super-linter's default.
+            echo "MARKDOWN_CONFIG_FILE=.markdownlint.yml" >> "$GITHUB_ENV"
+            echo "staged root .markdownlint.yml -> .github/linters/.markdownlint.yml"
+          else
+            echo "no root .markdownlint.yml — super-linter will use its default markdownlint config"
+          fi
+
       - name: Super-Linter
         uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8
         continue-on-error: ${{ inputs.soft-launch }}

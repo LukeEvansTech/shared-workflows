@@ -121,7 +121,7 @@ When a repo is cleaned up and ready to gate merges, flip:
 
 ### 3. Per-repo `.github/linters/` (optional)
 
-Super-linter natively reads linter config files (`.markdownlint.json`, `.yamllint`, `.shellcheckrc`, etc.) from the repo being linted. No extra wiring needed. Each repo owns its rules. We do not centralise rule configs at this stage — bottom-up consolidation only if patterns repeat ≥5 times across repos.
+Super-linter reads linter config files from `LINTER_RULES_PATH` (default `.github/linters/`) using each linter's `*_CONFIG_FILE` name — it does **not** auto-discover configs from the repo root. So `.github/linters/`-resident configs (`.yamllint`, `.shellcheckrc`, `.tflint.hcl`, `.ansible-lint.yml`, `.codespellrc`, `.jscpd.json`) are picked up natively, but the canonical **markdownlint** config lives at the repo _root_ (`.markdownlint.yml`, drift-checked, also read by editors/pre-commit/zensical), so super-linter would otherwise ignore it and fall back to its stricter bundled default. `super-linter.yml` bridges this by copying the root `.markdownlint.yml` into `.github/linters/` and setting `MARKDOWN_CONFIG_FILE` at run time. Each repo otherwise owns its rules; we do not centralise the rest at this stage — bottom-up consolidation only if patterns repeat ≥5 times across repos.
 
 ---
 
