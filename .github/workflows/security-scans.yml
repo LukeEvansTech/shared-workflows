@@ -15,6 +15,25 @@ on:
         description: Comma-separated Checkov frameworks to load (kubernetes, helm, terraform, dockerfile, ...)
         type: string
         default: kubernetes,helm
+      checkov-skip-check:
+        description: >-
+          Comma-separated Checkov check IDs to skip (passed to checkov
+          --skip-check). The default is fleet policy, not per-repo trivia: it
+          waives the GitHub-governance checks that only ever fire on the
+          GitHub-management terraform repo and are deliberate choices for a
+          solo, public-friendly fleet —
+          CKV_GIT_1 (repos are public by design; bucketed public/private),
+          CKV_GIT_3 (vuln alerts are managed via the dedicated
+          github_repository_vulnerability_alerts resource, which Checkov can't
+          trace from the github_repository — always a false positive here),
+          CKV_GIT_5 (solo operator: required approvals is 0 by design — you
+          can't approve your own PR), and
+          CKV_GIT_6 (signed commits deferred until bots sign — tracked in
+          terraform). These no-op on every other repo (no github_repository
+          resources). NOT skipped: CKV2_GIT_1 (branch protection) — enforced via
+          terraform. Override per-repo to widen/narrow.
+        type: string
+        default: CKV_GIT_1,CKV_GIT_3,CKV_GIT_5,CKV_GIT_6
       trivy-severity:
         description: Trivy severity filter
         type: string
@@ -54,6 +73,8 @@ jobs:
         with:
           directory: .
           framework: ${{ inputs.checkov-frameworks }}
+          # Fleet-policy waivers (see the checkov-skip-check input). Empty = none.
+          skip_check: ${{ inputs.checkov-skip-check }}
           output_format: sarif
           output_file_path: checkov-results.sarif
           quiet: true
