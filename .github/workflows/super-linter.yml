@@ -16,9 +16,15 @@ on:
         type: boolean
         default: true
       filter-regex-exclude:
-        description: Regex of paths to exclude from linting
+        description: >-
+          Regex of paths to exclude from linting. Default skips vendored /
+          generated dirs (vendor, node_modules, .terraform, .venv, dist, build,
+          collections) and docs/superpowers/ — internal agent planning artifacts
+          (specs/plans from the brainstorming/writing-plans workflow), not
+          published product docs (those live under docs/ and are governed by
+          docs.yml / docs-standard-check.yml).
         type: string
-        default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build|collections)/'
+        default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build|collections)/|(^|/)docs/superpowers/'
       validate-kubernetes-kubeconform:
         description: >-
           Run kubeconform against Kubernetes manifests. Defaults false because
@@ -135,3 +141,14 @@ jobs:
           # actually want copy-paste detection are better served by
           # SonarCloud / PMD-CPD at PR-diff scope.
           VALIDATE_JSCPD: false
+          # dotenv-linter (ENV) is disabled fleet-wide: it is fundamentally
+          # incompatible with the standard terraform-* .env.example shape.
+          # `TF_VAR_<name>` keys MUST keep the variable's real (lowercase) name —
+          # dotenv-linter's LowercaseKey flags them, and uppercasing breaks
+          # Terraform (unfixable in-file). 1Password `op://Vault Name/Item/...`
+          # values also trip ValueWithoutQuotes (spaces in vault/item names),
+          # and UnorderedKey fights the logical TF_VAR_*/AWS_* grouping. ENV is
+          # a style-only linter with no safe fix for this convention, so it is
+          # off. Keeps every VALIDATE_* in the exclude (false) polarity that
+          # super-linter v8 requires.
+          VALIDATE_ENV: false
