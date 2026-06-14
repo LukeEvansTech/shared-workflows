@@ -148,6 +148,12 @@ def apply(repo: str, publish: bool, allow_no_pages: bool, dry_run: bool) -> None
                 (TEMPLATES / ".markdownlint.yml").read_text(),
                 "chore: adopt canonical markdownlint config", dry_run)
 
+    # Verbatim copy (no <SHA> placeholder), like .markdownlint.yml. Pins shell
+    # indent so super-linter's SHELL_SHFMT matches the fleet's 2-space scripts.
+    upsert_file(repo, ".editorconfig",
+                (TEMPLATES / ".editorconfig").read_text(),
+                "chore: adopt canonical .editorconfig (shfmt indent)", dry_run)
+
     update_renovate(repo, dry_run)
 
 
