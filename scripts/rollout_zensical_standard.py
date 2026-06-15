@@ -24,6 +24,12 @@ SHARED_WORKFLOWS_REPO = "LukeEvansTech/shared-workflows"
 # Configure Pages, which fails when Pages is disabled). resolve_publish_flags()
 # auto-applies the right defaults so an operator can't forget.
 from audit_zensical_standard import REPOS_BUILD_ONLY
+from zensical_drift import _strip_jsonc
+
+# Renovate config filenames: `.renovaterc.json5` is the house standard, with the
+# legacy `renovate.json` migrated away on next rollout.
+RENOVATE_TARGET = ".renovaterc.json5"
+RENOVATE_LEGACY = "renovate.json"
 
 
 def resolve_publish_flags(
@@ -157,45 +163,63 @@ def apply(repo: str, publish: bool, allow_no_pages: bool, dry_run: bool) -> None
     update_renovate(repo, dry_run)
 
 
+def _read_remote_renovate(repo: str) -> tuple[str | None, str | None]:
+    """Return (path, raw_text) of the repo's Renovate config, preferring
+    `.renovaterc.json5` over the legacy `renovate.json`. (None, None) if absent."""
+    for path in (RENOVATE_TARGET, RENOVATE_LEGACY):
+        r = gh(["api", f"repos/{repo}/contents/{path}"])
+        if r.returncode == 0:
+            return path, base64.b64decode(json.loads(r.stdout)["content"]).decode()
+    return None, None
+
+
 def update_renovate(repo: str, dry_run: bool) -> None:
-    r = gh(["api", f"repos/{repo}/contents/renovate.json"])
-    canonical_text = (TEMPLATES / "renovate.json").read_text()
-    canonical = json.loads(canonical_text)
-    if r.returncode != 0:
-        # No renovate.json yet — write canonical verbatim
-        upsert_file(repo, "renovate.json", canonical_text,
-                    "chore: add canonical renovate.json", dry_run)
+    canonical_text = (TEMPLATES / RENOVATE_TARGET).read_text()
+    # Template is JSON5 (house idiom: unquoted keys); parse tolerantly.
+    canonical = json.loads(_strip_jsonc(canonical_text))
+    existing_path, existing_raw = _read_remote_renovate(repo)
+    if existing_raw is None:
+        # No config yet — write canonical verbatim
+        upsert_file(repo, RENOVATE_TARGET, canonical_text,
+                    "chore: add canonical .renovaterc.json5", dry_run)
         return
-    existing_raw = base64.b64decode(json.loads(r.stdout)["content"]).decode()
     try:
         existing = json.loads(existing_raw)
     except json.JSONDecodeError:
-        print(f"  renovate.json: BAILING — existing file is not valid JSON", file=sys.stderr)
-        return
+        try:
+            existing = json.loads(_strip_jsonc(existing_raw))
+        except json.JSONDecodeError:
+            print(f"  {existing_path}: BAILING — existing file is not parseable", file=sys.stderr)
+            return
     extends = existing.get("extends", [])
     changed = False
     for required in canonical["extends"]:
         if required not in extends:
             extends.append(required)
             changed = True
-    if not changed:
-        print(f"  renovate.json: NO-CHANGE")
-        return
     existing["extends"] = extends
+    # A legacy renovate.json gets migrated to .renovaterc.json5 even when its
+    # extends are already conformant.
+    migrating = existing_path == RENOVATE_LEGACY
+    if not changed and not migrating:
+        print(f"  {existing_path}: NO-CHANGE")
+        return
     # If the only keys are $schema + extends with values matching canonical, write canonical verbatim
-    # (this is the common case for all 18 repos and avoids prettier formatting drift)
+    # (the common case; avoids prettier formatting drift)
     if set(existing.keys()) <= {"$schema", "extends"} and existing.get("$schema") == canonical.get("$schema") and existing["extends"] == canonical["extends"]:
         new_content = canonical_text
     else:
         # Repo has custom keys — preserve them, format extends inline to match prettier
-        # Use json.dumps then post-process to inline short arrays
         new_content = _format_renovate(existing)
-    upsert_file(repo, "renovate.json", new_content,
-                "chore(renovate): add helpers:pinGitHubActionDigests", dry_run)
+    upsert_file(repo, RENOVATE_TARGET, new_content,
+                "chore(renovate): standardize on shared LukeEvansTech/renovate-config preset", dry_run)
+    if migrating:
+        delete_file(repo, RENOVATE_LEGACY,
+                    "chore(renovate): remove legacy renovate.json (renamed to .renovaterc.json5)", dry_run)
 
 
 def _format_renovate(data: dict) -> str:
-    """Format renovate.json matching prettier defaults: 2-space indent, short arrays inline.
+    """Format .renovaterc.json5 matching prettier defaults: 2-space indent, short arrays inline.
 
     Specifically inlines top-level `extends` array since prettier collapses arrays
     that fit within the default print width (80 chars).

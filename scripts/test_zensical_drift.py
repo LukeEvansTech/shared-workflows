@@ -138,3 +138,78 @@ def test_layout_fails():
     out = result.stdout + result.stderr
     assert "[layout]" in out
     assert "docs/docs" in out
+
+
+# --- check_renovate unit tests: filename acceptance + JSON5 tolerance ---
+import zensical_drift
+
+CENTRAL = '{"extends": ["github>LukeEvansTech/renovate-config"]}'
+
+
+def _run_check_renovate(tmp_path, files):
+    """Write {filename: content} into tmp_path, run check_renovate in isolation,
+    and return the resulting failure annotations."""
+    for name, content in files.items():
+        (tmp_path / name).write_text(content)
+    zensical_drift.FAILURES = []
+    zensical_drift.check_renovate(tmp_path)
+    return zensical_drift.FAILURES
+
+
+def test_renovate_accepts_renovaterc_json5(tmp_path):
+    assert _run_check_renovate(tmp_path, {".renovaterc.json5": CENTRAL}) == []
+
+
+def test_renovate_accepts_json5_with_comments_and_trailing_comma(tmp_path):
+    content = (
+        "{\n"
+        "  // house standard\n"
+        '  "extends": ["github>LukeEvansTech/renovate-config"],\n'
+        "}\n"
+    )
+    assert _run_check_renovate(tmp_path, {".renovaterc.json5": content}) == []
+
+
+def test_renovate_accepts_legacy_renovate_json(tmp_path):
+    assert _run_check_renovate(tmp_path, {"renovate.json": CENTRAL}) == []
+
+
+def test_renovate_missing_any_config_fails(tmp_path):
+    failures = _run_check_renovate(tmp_path, {})
+    assert failures and "no Renovate config" in failures[0]
+
+
+def test_renovate_not_extending_central_fails(tmp_path):
+    failures = _run_check_renovate(tmp_path, {".renovaterc.json5": '{"extends": ["config:recommended"]}'})
+    assert failures and "renovate-config" in failures[0]
+
+
+def test_renovate_dual_config_fails(tmp_path):
+    failures = _run_check_renovate(tmp_path, {".renovaterc.json5": CENTRAL, "renovate.json": CENTRAL})
+    assert failures and "multiple Renovate config" in failures[0]
+
+
+def test_renovate_url_with_comment_parses_not_fallback(tmp_path):
+    # Comment + https:// URL + non-central extends. Must FAIL via the parse path
+    # ("extends must include"), proving the `//` in the URL is not stripped as a
+    # comment (which would force the weaker substring fallback).
+    content = (
+        "{\n"
+        "  // the :// in the schema URL must survive comment-stripping\n"
+        '  "$schema": "https://docs.renovatebot.com/renovate-schema.json",\n'
+        '  "extends": ["config:recommended"],\n'
+        "}\n"
+    )
+    failures = _run_check_renovate(tmp_path, {".renovaterc.json5": content})
+    assert failures and "extends must include" in failures[0]
+
+
+def test_renovate_accepts_house_idiom_unquoted_keys(tmp_path):
+    # Prettier's JSON5 idiom for the fleet: unquoted keys + trailing comma.
+    content = (
+        "{\n"
+        '  $schema: "https://docs.renovatebot.com/renovate-schema.json",\n'
+        '  extends: ["github>LukeEvansTech/renovate-config"],\n'
+        "}\n"
+    )
+    assert _run_check_renovate(tmp_path, {".renovaterc.json5": content}) == []
