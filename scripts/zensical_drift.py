@@ -6,6 +6,7 @@ Emits GitHub annotations and exits non-zero on any violation.
 
 Spec: docs/superpowers/specs/2026-05-26-zensical-docs-standard-design.md
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,16 +32,28 @@ def check_pin(repo_root: Path) -> None:
     if not req.exists():
         fail("pin", str(req), "docs/requirements.txt is missing")
         return
-    lines = [l.strip() for l in req.read_text().splitlines() if l.strip() and not l.startswith("#")]
+    lines = [
+        ln.strip()
+        for ln in req.read_text().splitlines()
+        if ln.strip() and not ln.startswith("#")
+    ]
     if not lines:
         fail("pin", str(req), "docs/requirements.txt has no non-comment lines")
         return
     if len(lines) > 1:
-        fail("pin", str(req), f"docs/requirements.txt should contain only `zensical==X.Y.Z`; found {len(lines)} non-comment lines")
+        fail(
+            "pin",
+            str(req),
+            f"docs/requirements.txt should contain only `zensical==X.Y.Z`; found {len(lines)} non-comment lines",
+        )
         return
     pin = lines[0]
     if not re.fullmatch(r"zensical==\d+\.\d+\.\d+", pin):
-        fail("pin", str(req), f"pin must use exact version (`zensical==X.Y.Z`); found `{pin}`")
+        fail(
+            "pin",
+            str(req),
+            f"pin must use exact version (`zensical==X.Y.Z`); found `{pin}`",
+        )
 
 
 def check_palette(repo_root: Path) -> None:
@@ -53,29 +66,55 @@ def check_palette(repo_root: Path) -> None:
     # Required: at least one [[project.theme.palette]] with prefers-color-scheme: light, one with dark
     # Use simple substring matching: find [[project.theme.palette]] headers and check content between them
     palette_blocks = re.findall(
-        r'\[\[project\.theme\.palette\]\](.*?)(?=\[\[project\.theme\.palette\]\]|\Z)',
+        r"\[\[project\.theme\.palette\]\](.*?)(?=\[\[project\.theme\.palette\]\]|\Z)",
         text,
         re.DOTALL,
     )
     if len(palette_blocks) < 2:
-        fail("palette", str(cfg), f"need at least 2 [[project.theme.palette]] entries, found {len(palette_blocks)}")
+        fail(
+            "palette",
+            str(cfg),
+            f"need at least 2 [[project.theme.palette]] entries, found {len(palette_blocks)}",
+        )
         return
 
-    has_light = any('media = "(prefers-color-scheme: light)"' in b for b in palette_blocks)
-    has_dark = any('media = "(prefers-color-scheme: dark)"' in b for b in palette_blocks)
+    has_light = any(
+        'media = "(prefers-color-scheme: light)"' in b for b in palette_blocks
+    )
+    has_dark = any(
+        'media = "(prefers-color-scheme: dark)"' in b for b in palette_blocks
+    )
     if not has_light:
-        fail("palette", str(cfg), 'no palette entry with `media = "(prefers-color-scheme: light)"`')
+        fail(
+            "palette",
+            str(cfg),
+            'no palette entry with `media = "(prefers-color-scheme: light)"`',
+        )
     if not has_dark:
-        fail("palette", str(cfg), 'no palette entry with `media = "(prefers-color-scheme: dark)"`')
+        fail(
+            "palette",
+            str(cfg),
+            'no palette entry with `media = "(prefers-color-scheme: dark)"`',
+        )
 
     # Forbidden: flat toggle_icon / toggle_name keys at palette entry level
-    if re.search(r'^\s*toggle_icon\s*=', text, re.M) or re.search(r'^\s*toggle_name\s*=', text, re.M):
-        fail("palette", str(cfg), "use nested [project.theme.palette.toggle] table; flat toggle_icon/toggle_name does not render the toggle button")
+    if re.search(r"^\s*toggle_icon\s*=", text, re.M) or re.search(
+        r"^\s*toggle_name\s*=", text, re.M
+    ):
+        fail(
+            "palette",
+            str(cfg),
+            "use nested [project.theme.palette.toggle] table; flat toggle_icon/toggle_name does not render the toggle button",
+        )
 
     # Required: each [[project.theme.palette]] must be followed by a [project.theme.palette.toggle] table
-    toggle_tables = re.findall(r'\[project\.theme\.palette\.toggle\]', text)
+    toggle_tables = re.findall(r"\[project\.theme\.palette\.toggle\]", text)
     if len(toggle_tables) < 2:
-        fail("palette", str(cfg), f"need a [project.theme.palette.toggle] table for each palette entry; found {len(toggle_tables)}")
+        fail(
+            "palette",
+            str(cfg),
+            f"need a [project.theme.palette.toggle] table for each palette entry; found {len(toggle_tables)}",
+        )
 
 
 REQUIRED_WORKFLOWS = {
@@ -99,10 +138,14 @@ def check_workflows(repo_root: Path) -> None:
         # Shape check: must call the expected reusable workflow
         if not re.search(rf"uses:\s*{expected_reusable}@[a-f0-9]{{40}}", text):
             display = expected_reusable.replace("\\", "")
-            fail("workflows", str(wf), f"`{wf_name}` must call `{display}@<SHA>` (40-hex SHA-pinned)")
+            fail(
+                "workflows",
+                str(wf),
+                f"`{wf_name}` must call `{display}@<SHA>` (40-hex SHA-pinned)",
+            )
         # SHA-pinning check: every `uses:` line must reference a 40-hex SHA (not a tag)
         for line_num, line in enumerate(text.splitlines(), 1):
-            m = re.match(r'\s*uses:\s*([^\s#]+)', line)
+            m = re.match(r"\s*uses:\s*([^\s#]+)", line)
             if not m:
                 continue
             ref = m.group(1)
@@ -111,7 +154,11 @@ def check_workflows(repo_root: Path) -> None:
                 continue
             tag_part = ref.split("@", 1)[1]
             if not re.fullmatch(r"[a-f0-9]{40}", tag_part):
-                fail("workflows", f"{wf}:{line_num}", f"action must be SHA-pinned (40-hex); found `@{tag_part}`")
+                fail(
+                    "workflows",
+                    f"{wf}:{line_num}",
+                    f"action must be SHA-pinned (40-hex); found `@{tag_part}`",
+                )
 
 
 def check_site_url(repo_root: Path) -> None:
@@ -126,9 +173,15 @@ def check_site_url(repo_root: Path) -> None:
     if url.startswith("http"):
         host = url.split("//", 1)[1].split("/", 1)[0]
         if host.lower() != host:
-            fail("site_url", str(cfg), f"site_url host must be lowercase; found `{host}`")
+            fail(
+                "site_url", str(cfg), f"site_url host must be lowercase; found `{host}`"
+            )
         if "lukevanstech" in host.lower() and "lukeevanstech" not in host.lower():
-            fail("site_url", str(cfg), f"site_url has typo `lukevanstech` (should be `lukeevanstech`); found `{host}`")
+            fail(
+                "site_url",
+                str(cfg),
+                f"site_url has typo `lukevanstech` (should be `lukeevanstech`); found `{host}`",
+            )
 
 
 def check_theme_baseline(repo_root: Path) -> None:
@@ -146,7 +199,11 @@ def check_theme_baseline(repo_root: Path) -> None:
 
 def check_layout(repo_root: Path) -> None:
     if not (repo_root / "docs" / "docs").is_dir():
-        fail("layout", str(repo_root / "docs" / "docs"), "docs/docs/ directory is missing (canonical content path)")
+        fail(
+            "layout",
+            str(repo_root / "docs" / "docs"),
+            "docs/docs/ directory is missing (canonical content path)",
+        )
 
 
 # Accepted Renovate config filenames, in preference order. `.renovaterc.json5`
@@ -167,23 +224,33 @@ def _strip_jsonc(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)  # block comments
     # line comments — `(?<!:)` so we don't eat the `//` in `https://` URLs
     text = re.sub(r"(?m)(?<!:)//[^\n]*$", "", text)
-    text = re.sub(r",(\s*[}\]])", r"\1", text)              # trailing commas
+    text = re.sub(r",(\s*[}\]])", r"\1", text)  # trailing commas
     # quote unquoted identifier keys: `  extends:` -> `  "extends":`
-    text = re.sub(r'(?m)^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)', r'\1"\2"\3', text)
+    text = re.sub(r"(?m)^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)", r'\1"\2"\3', text)
     return text
 
 
 def check_renovate(repo_root: Path) -> None:
-    found = [repo_root / name for name in RENOVATE_CONFIG_NAMES if (repo_root / name).exists()]
+    found = [
+        repo_root / name
+        for name in RENOVATE_CONFIG_NAMES
+        if (repo_root / name).exists()
+    ]
     if not found:
-        fail("renovate", str(repo_root / RENOVATE_CONFIG_NAMES[0]),
-             "no Renovate config found (expected `.renovaterc.json5` or legacy `renovate.json`)")
+        fail(
+            "renovate",
+            str(repo_root / RENOVATE_CONFIG_NAMES[0]),
+            "no Renovate config found (expected `.renovaterc.json5` or legacy `renovate.json`)",
+        )
         return
     if len(found) > 1:
         names = ", ".join(p.name for p in found)
-        fail("renovate", str(found[0]),
-             f"multiple Renovate config files found ({names}); keep exactly one "
-             "(`.renovaterc.json5` preferred) — Renovate errors on duplicate configs")
+        fail(
+            "renovate",
+            str(found[0]),
+            f"multiple Renovate config files found ({names}); keep exactly one "
+            "(`.renovaterc.json5` preferred) — Renovate errors on duplicate configs",
+        )
         return
     r = found[0]
     raw = r.read_text()
@@ -207,8 +274,11 @@ def check_renovate(repo_root: Path) -> None:
     # Could not parse even after stripping comments (e.g. unquoted JSON5 keys):
     # fall back to a textual check for the preset reference in the de-commented body.
     if CENTRAL_PRESET not in _strip_jsonc(raw):
-        fail("renovate", str(r),
-             f"`{r.name}` is not parseable and does not reference `{CENTRAL_PRESET}`")
+        fail(
+            "renovate",
+            str(r),
+            f"`{r.name}` is not parseable and does not reference `{CENTRAL_PRESET}`",
+        )
 
 
 def check_markdownlint(repo_root: Path) -> None:
@@ -218,22 +288,36 @@ def check_markdownlint(repo_root: Path) -> None:
         fail("markdownlint", str(ml), ".markdownlint.yml is missing at repo root")
         return
     if not canonical.exists():
-        print(f"::warning::canonical .markdownlint.yml not found at {canonical}; hash check skipped", file=sys.stderr)
+        print(
+            f"::warning::canonical .markdownlint.yml not found at {canonical}; hash check skipped",
+            file=sys.stderr,
+        )
         return
-    if hashlib.sha256(ml.read_bytes()).hexdigest() != hashlib.sha256(canonical.read_bytes()).hexdigest():
-        fail("markdownlint", str(ml), "content differs from canonical templates/.markdownlint.yml; run scripts/sync_markdownlint.py")
+    if (
+        hashlib.sha256(ml.read_bytes()).hexdigest()
+        != hashlib.sha256(canonical.read_bytes()).hexdigest()
+    ):
+        fail(
+            "markdownlint",
+            str(ml),
+            "content differs from canonical templates/.markdownlint.yml; run scripts/sync_markdownlint.py",
+        )
 
 
-def check_pages(repo: str | None, allow_no_pages: bool, allow_build_type_legacy: bool) -> None:
+def check_pages(
+    repo: str | None, allow_no_pages: bool, allow_build_type_legacy: bool
+) -> None:
     if not repo:
         return
     try:
         r = subprocess.run(
             ["gh", "api", f"repos/{repo}/pages"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except FileNotFoundError:
-        print(f"::warning::gh CLI not found; pages check skipped", file=sys.stderr)
+        print("::warning::gh CLI not found; pages check skipped", file=sys.stderr)
         return
     except subprocess.TimeoutExpired:
         fail("pages", f"repos/{repo}/pages", "gh CLI timed out after 30s")
@@ -241,7 +325,11 @@ def check_pages(repo: str | None, allow_no_pages: bool, allow_build_type_legacy:
     if r.returncode != 0:
         if allow_no_pages:
             return
-        fail("pages", f"repos/{repo}/pages", "Pages is not enabled (pass --allow-no-pages for build-only repos)")
+        fail(
+            "pages",
+            f"repos/{repo}/pages",
+            "Pages is not enabled (pass --allow-no-pages for build-only repos)",
+        )
         return
     try:
         data = _json.loads(r.stdout)
@@ -250,7 +338,11 @@ def check_pages(repo: str | None, allow_no_pages: bool, allow_build_type_legacy:
         return
     build_type = data.get("build_type")
     if build_type == "legacy" and not allow_build_type_legacy:
-        fail("pages", f"repos/{repo}/pages", "Pages build_type is `legacy`; standard requires `workflow`")
+        fail(
+            "pages",
+            f"repos/{repo}/pages",
+            "Pages build_type is `legacy`; standard requires `workflow`",
+        )
 
 
 def main() -> int:

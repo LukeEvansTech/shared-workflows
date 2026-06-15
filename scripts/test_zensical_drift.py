@@ -1,8 +1,9 @@
 """Tests for zensical_drift.py."""
+
 import subprocess
 from pathlib import Path
 
-import pytest
+import pytest  # pylint: disable=import-error  # present at runtime, not in the lint env
 
 SCRIPT = Path(__file__).parent / "zensical_drift.py"
 FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "zensical"
@@ -11,7 +12,13 @@ FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "zensical"
 def run_drift(fixture_name: str, *extra_args: str) -> subprocess.CompletedProcess:
     """Run zensical_drift.py in the given fixture directory."""
     return subprocess.run(
-        ["python3", str(SCRIPT), "--repo-root", str(FIXTURES / fixture_name), *extra_args],
+        [
+            "python3",
+            str(SCRIPT),
+            "--repo-root",
+            str(FIXTURES / fixture_name),
+            *extra_args,
+        ],
         capture_output=True,
         text=True,
     )
@@ -88,7 +95,8 @@ def test_markdownlint_hash_mismatch_fails():
 
 def test_good_fixture_passes_overall():
     result = run_drift("good")
-    assert result.returncode == 0, f"good fixture should pass; got:\n{result.stdout}\n{result.stderr}"
+    msg = f"good fixture should pass:\n{result.stdout}\n{result.stderr}"
+    assert result.returncode == 0, msg
 
 
 import shutil
@@ -108,8 +116,16 @@ def test_pages_check_skipped_when_no_repo_arg():
 def test_pages_check_passes_on_known_workflow_repo():
     """Live test against M365LabelSync which has build_type=workflow as of 2026-05-26."""
     result = subprocess.run(
-        ["python3", str(SCRIPT), "--repo-root", str(FIXTURES / "good"), "--repo", "LukeEvansTech/M365LabelSync"],
-        capture_output=True, text=True,
+        [
+            "python3",
+            str(SCRIPT),
+            "--repo-root",
+            str(FIXTURES / "good"),
+            "--repo",
+            "LukeEvansTech/M365LabelSync",
+        ],
+        capture_output=True,
+        text=True,
     )
     assert "[pages]" not in (result.stdout + result.stderr)
 
@@ -118,8 +134,17 @@ def test_pages_check_passes_on_known_workflow_repo():
 def test_pages_check_allow_no_pages():
     """With --allow-no-pages, an empty Pages response should not fail."""
     result = subprocess.run(
-        ["python3", str(SCRIPT), "--repo-root", str(FIXTURES / "good"), "--repo", "LukeEvansTech/lgwebos", "--allow-no-pages"],
-        capture_output=True, text=True,
+        [
+            "python3",
+            str(SCRIPT),
+            "--repo-root",
+            str(FIXTURES / "good"),
+            "--repo",
+            "LukeEvansTech/lgwebos",
+            "--allow-no-pages",
+        ],
+        capture_output=True,
+        text=True,
     )
     assert "[pages]" not in (result.stdout + result.stderr)
 
@@ -129,7 +154,7 @@ def test_theme_baseline_fails():
     assert result.returncode != 0
     out = result.stdout + result.stderr
     assert "[theme]" in out
-    assert 'theme.name' in out
+    assert "theme.name" in out
 
 
 def test_layout_fails():
@@ -161,12 +186,7 @@ def test_renovate_accepts_renovaterc_json5(tmp_path):
 
 
 def test_renovate_accepts_json5_with_comments_and_trailing_comma(tmp_path):
-    content = (
-        "{\n"
-        "  // house standard\n"
-        '  "extends": ["github>LukeEvansTech/renovate-config"],\n'
-        "}\n"
-    )
+    content = '{\n  // house standard\n  "extends": ["github>LukeEvansTech/renovate-config"],\n}\n'
     assert _run_check_renovate(tmp_path, {".renovaterc.json5": content}) == []
 
 
@@ -180,12 +200,16 @@ def test_renovate_missing_any_config_fails(tmp_path):
 
 
 def test_renovate_not_extending_central_fails(tmp_path):
-    failures = _run_check_renovate(tmp_path, {".renovaterc.json5": '{"extends": ["config:recommended"]}'})
+    failures = _run_check_renovate(
+        tmp_path, {".renovaterc.json5": '{"extends": ["config:recommended"]}'}
+    )
     assert failures and "renovate-config" in failures[0]
 
 
 def test_renovate_dual_config_fails(tmp_path):
-    failures = _run_check_renovate(tmp_path, {".renovaterc.json5": CENTRAL, "renovate.json": CENTRAL})
+    failures = _run_check_renovate(
+        tmp_path, {".renovaterc.json5": CENTRAL, "renovate.json": CENTRAL}
+    )
     assert failures and "multiple Renovate config" in failures[0]
 
 
