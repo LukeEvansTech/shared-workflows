@@ -149,25 +149,64 @@ def check_layout(repo_root: Path) -> None:
         fail("layout", str(repo_root / "docs" / "docs"), "docs/docs/ directory is missing (canonical content path)")
 
 
+# Accepted Renovate config filenames, in preference order. `.renovaterc.json5`
+# is the house standard (permits comments); `renovate.json` is the legacy name
+# kept for back-compat during the fleet migration.
+RENOVATE_CONFIG_NAMES = (".renovaterc.json5", "renovate.json")
+CENTRAL_PRESET = "github>LukeEvansTech/renovate-config"
+
+
+def _strip_jsonc(text: str) -> str:
+    """Best-effort JSON5/JSONC → JSON so stdlib json can parse it.
+
+    Drops `//` line comments, `/* */` block comments, and trailing commas —
+    enough for the comment-bearing `.renovaterc.json5` files the fleet uses.
+    Unquoted keys are not rewritten here; check_renovate falls back to a
+    substring check for the preset reference when a parse still fails.
+    """
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)  # block comments
+    # line comments — `(?<!:)` so we don't eat the `//` in `https://` URLs
+    text = re.sub(r"(?m)(?<!:)//[^\n]*$", "", text)
+    text = re.sub(r",(\s*[}\]])", r"\1", text)              # trailing commas
+    return text
+
+
 def check_renovate(repo_root: Path) -> None:
-    r = repo_root / "renovate.json"
-    if not r.exists():
-        fail("renovate", str(r), "renovate.json is missing")
+    found = [repo_root / name for name in RENOVATE_CONFIG_NAMES if (repo_root / name).exists()]
+    if not found:
+        fail("renovate", str(repo_root / RENOVATE_CONFIG_NAMES[0]),
+             "no Renovate config found (expected `.renovaterc.json5` or legacy `renovate.json`)")
         return
-    try:
-        data = _json.loads(r.read_text())
-    except _json.JSONDecodeError as e:
-        fail("renovate", str(r), f"renovate.json is not valid JSON: {e}")
+    if len(found) > 1:
+        names = ", ".join(p.name for p in found)
+        fail("renovate", str(found[0]),
+             f"multiple Renovate config files found ({names}); keep exactly one "
+             "(`.renovaterc.json5` preferred) — Renovate errors on duplicate configs")
         return
-    extends = data.get("extends", [])
-    if "github>LukeEvansTech/renovate-config" not in extends:
-        fail(
-            "renovate",
-            str(r),
-            "extends must include `github>LukeEvansTech/renovate-config` "
-            "(the shared config; it bundles config:recommended and "
-            "pinGitHubActionDigests via home-operations/renovate-presets)",
-        )
+    r = found[0]
+    raw = r.read_text()
+    data = None
+    for candidate in (raw, _strip_jsonc(raw)):
+        try:
+            data = _json.loads(candidate)
+            break
+        except _json.JSONDecodeError:
+            continue
+    if data is not None:
+        if CENTRAL_PRESET not in data.get("extends", []):
+            fail(
+                "renovate",
+                str(r),
+                f"extends must include `{CENTRAL_PRESET}` "
+                "(the shared config; it bundles config:recommended and "
+                "pinGitHubActionDigests via home-operations/renovate-presets)",
+            )
+        return
+    # Could not parse even after stripping comments (e.g. unquoted JSON5 keys):
+    # fall back to a textual check for the preset reference in the de-commented body.
+    if CENTRAL_PRESET not in _strip_jsonc(raw):
+        fail("renovate", str(r),
+             f"`{r.name}` is not parseable and does not reference `{CENTRAL_PRESET}`")
 
 
 def check_markdownlint(repo_root: Path) -> None:
