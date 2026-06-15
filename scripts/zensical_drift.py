@@ -33,7 +33,9 @@ def check_pin(repo_root: Path) -> None:
         fail("pin", str(req), "docs/requirements.txt is missing")
         return
     lines = [
-        ln.strip() for ln in req.read_text().splitlines() if ln.strip() and not ln.startswith("#")
+        ln.strip()
+        for ln in req.read_text().splitlines()
+        if ln.strip() and not ln.startswith("#")
     ]
     if not lines:
         fail("pin", str(req), "docs/requirements.txt has no non-comment lines")
@@ -47,7 +49,11 @@ def check_pin(repo_root: Path) -> None:
         return
     pin = lines[0]
     if not re.fullmatch(r"zensical==\d+\.\d+\.\d+", pin):
-        fail("pin", str(req), f"pin must use exact version (`zensical==X.Y.Z`); found `{pin}`")
+        fail(
+            "pin",
+            str(req),
+            f"pin must use exact version (`zensical==X.Y.Z`); found `{pin}`",
+        )
 
 
 def check_palette(repo_root: Path) -> None:
@@ -72,12 +78,24 @@ def check_palette(repo_root: Path) -> None:
         )
         return
 
-    has_light = any('media = "(prefers-color-scheme: light)"' in b for b in palette_blocks)
-    has_dark = any('media = "(prefers-color-scheme: dark)"' in b for b in palette_blocks)
+    has_light = any(
+        'media = "(prefers-color-scheme: light)"' in b for b in palette_blocks
+    )
+    has_dark = any(
+        'media = "(prefers-color-scheme: dark)"' in b for b in palette_blocks
+    )
     if not has_light:
-        fail("palette", str(cfg), 'no palette entry with `media = "(prefers-color-scheme: light)"`')
+        fail(
+            "palette",
+            str(cfg),
+            'no palette entry with `media = "(prefers-color-scheme: light)"`',
+        )
     if not has_dark:
-        fail("palette", str(cfg), 'no palette entry with `media = "(prefers-color-scheme: dark)"`')
+        fail(
+            "palette",
+            str(cfg),
+            'no palette entry with `media = "(prefers-color-scheme: dark)"`',
+        )
 
     # Forbidden: flat toggle_icon / toggle_name keys at palette entry level
     if re.search(r"^\s*toggle_icon\s*=", text, re.M) or re.search(
@@ -121,7 +139,9 @@ def check_workflows(repo_root: Path) -> None:
         if not re.search(rf"uses:\s*{expected_reusable}@[a-f0-9]{{40}}", text):
             display = expected_reusable.replace("\\", "")
             fail(
-                "workflows", str(wf), f"`{wf_name}` must call `{display}@<SHA>` (40-hex SHA-pinned)"
+                "workflows",
+                str(wf),
+                f"`{wf_name}` must call `{display}@<SHA>` (40-hex SHA-pinned)",
             )
         # SHA-pinning check: every `uses:` line must reference a 40-hex SHA (not a tag)
         for line_num, line in enumerate(text.splitlines(), 1):
@@ -153,7 +173,9 @@ def check_site_url(repo_root: Path) -> None:
     if url.startswith("http"):
         host = url.split("//", 1)[1].split("/", 1)[0]
         if host.lower() != host:
-            fail("site_url", str(cfg), f"site_url host must be lowercase; found `{host}`")
+            fail(
+                "site_url", str(cfg), f"site_url host must be lowercase; found `{host}`"
+            )
         if "lukevanstech" in host.lower() and "lukeevanstech" not in host.lower():
             fail(
                 "site_url",
@@ -209,7 +231,11 @@ def _strip_jsonc(text: str) -> str:
 
 
 def check_renovate(repo_root: Path) -> None:
-    found = [repo_root / name for name in RENOVATE_CONFIG_NAMES if (repo_root / name).exists()]
+    found = [
+        repo_root / name
+        for name in RENOVATE_CONFIG_NAMES
+        if (repo_root / name).exists()
+    ]
     if not found:
         fail(
             "renovate",
@@ -278,7 +304,9 @@ def check_markdownlint(repo_root: Path) -> None:
         )
 
 
-def check_pages(repo: str | None, allow_no_pages: bool, allow_build_type_legacy: bool) -> None:
+def check_pages(
+    repo: str | None, allow_no_pages: bool, allow_build_type_legacy: bool
+) -> None:
     if not repo:
         return
     try:

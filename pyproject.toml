@@ -1,15 +1,9 @@
 # Tooling config only. shared-workflows is not a Python package — this just
 # standardizes formatter/linter settings so the self-lint (super-linter) can
-# graduate from soft-launch to blocking. Line length 100 across all tools.
-[tool.black]
-line-length = 100
-
+# graduate from soft-launch to blocking. Line width is black's default (88),
+# matched by ruff-format and isort (profile=black).
 [tool.isort]
 profile = "black"
-line_length = 100
-
-[tool.ruff]
-line-length = 100
 
 [tool.ruff.lint]
 # E402: helper/test scripts intentionally sys.path-insert before importing

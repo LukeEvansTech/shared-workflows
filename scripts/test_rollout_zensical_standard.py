@@ -36,7 +36,10 @@ def test_allow_no_pages_flag_respected_for_publishing_repo():
 
 
 def test_unknown_repo_preserves_historical_publish_default():
-    assert resolve_publish_flags("LukeEvansTech/some-brand-new-repo", None, False) == (True, False)
+    assert resolve_publish_flags("LukeEvansTech/some-brand-new-repo", None, False) == (
+        True,
+        False,
+    )
 
 
 def test_every_build_only_repo_resolves_to_no_publish_by_default():

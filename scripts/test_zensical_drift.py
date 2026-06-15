@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-import pytest
+import pytest  # pylint: disable=import-error  # present at runtime, not in the lint env
 
 SCRIPT = Path(__file__).parent / "zensical_drift.py"
 FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "zensical"
@@ -12,7 +12,13 @@ FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "zensical"
 def run_drift(fixture_name: str, *extra_args: str) -> subprocess.CompletedProcess:
     """Run zensical_drift.py in the given fixture directory."""
     return subprocess.run(
-        ["python3", str(SCRIPT), "--repo-root", str(FIXTURES / fixture_name), *extra_args],
+        [
+            "python3",
+            str(SCRIPT),
+            "--repo-root",
+            str(FIXTURES / fixture_name),
+            *extra_args,
+        ],
         capture_output=True,
         text=True,
     )
@@ -89,7 +95,8 @@ def test_markdownlint_hash_mismatch_fails():
 
 def test_good_fixture_passes_overall():
     result = run_drift("good")
-    assert result.returncode == 0, f"good fixture failed:\n{result.stdout}\n{result.stderr}"
+    msg = f"good fixture should pass:\n{result.stdout}\n{result.stderr}"
+    assert result.returncode == 0, msg
 
 
 import shutil

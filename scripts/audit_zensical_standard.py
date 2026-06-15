@@ -37,7 +37,9 @@ DRIFT = Path(__file__).parent / "zensical_drift.py"
 def audit(repo: str, allow_no_pages: bool) -> tuple[int, str]:
     with tempfile.TemporaryDirectory() as tmp:
         r = subprocess.run(
-            ["gh", "repo", "clone", repo, tmp, "--", "--depth=1"], capture_output=True, text=True
+            ["gh", "repo", "clone", repo, tmp, "--", "--depth=1"],
+            capture_output=True,
+            text=True,
         )
         if r.returncode != 0:
             return 1, f"clone failed: {r.stderr.strip()}"

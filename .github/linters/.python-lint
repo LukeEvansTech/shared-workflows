@@ -5,7 +5,7 @@
 init-hook='import sys; sys.path.insert(0, "scripts")'
 
 [FORMAT]
-max-line-length = 100
+max-line-length = 88
 
 [MESSAGES CONTROL]
 # Disabled with rationale (rules that are wrong or noisy for this codebase):

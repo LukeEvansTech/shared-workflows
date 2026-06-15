@@ -50,7 +50,12 @@ def resolve_publish_flags(
 
 def gh(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["gh"] + args, capture_output=True, text=True, input=stdin, timeout=30, check=False
+        ["gh"] + args,
+        capture_output=True,
+        text=True,
+        input=stdin,
+        timeout=30,
+        check=False,
     )
 
 
@@ -79,7 +84,9 @@ def render_template(name: str, sha: str, publish: bool, allow_no_pages: bool) ->
     return text
 
 
-def upsert_file(repo: str, path: str, content: str, message: str, dry_run: bool) -> None:
+def upsert_file(
+    repo: str, path: str, content: str, message: str, dry_run: bool
+) -> None:
     r = gh(["api", f"repos/{repo}/contents/{path}"])
     if r.returncode == 0:
         existing = json.loads(r.stdout)
@@ -154,7 +161,9 @@ SUPERSEDED_LINT_WORKFLOWS = [
 def apply(repo: str, publish: bool, allow_no_pages: bool, dry_run: bool) -> None:
     sha = get_latest_sha()
     print(f"shared-workflows SHA: {sha}")
-    print(f"Applying standard to {repo} (publish={publish}, allow_no_pages={allow_no_pages})")
+    print(
+        f"Applying standard to {repo} (publish={publish}, allow_no_pages={allow_no_pages})"
+    )
 
     for path in SUPERSEDED_DEPLOY_WORKFLOWS + SUPERSEDED_LINT_WORKFLOWS:
         delete_file(
@@ -225,7 +234,11 @@ def update_renovate(repo: str, dry_run: bool) -> None:
     if existing_raw is None:
         # No config yet — write canonical verbatim
         upsert_file(
-            repo, RENOVATE_TARGET, canonical_text, "chore: add canonical .renovaterc.json5", dry_run
+            repo,
+            RENOVATE_TARGET,
+            canonical_text,
+            "chore: add canonical .renovaterc.json5",
+            dry_run,
         )
         return
     try:
@@ -234,7 +247,10 @@ def update_renovate(repo: str, dry_run: bool) -> None:
         try:
             existing = json.loads(_strip_jsonc(existing_raw))
         except json.JSONDecodeError:
-            print(f"  {existing_path}: BAILING — existing file is not parseable", file=sys.stderr)
+            print(
+                f"  {existing_path}: BAILING — existing file is not parseable",
+                file=sys.stderr,
+            )
             return
     extends = existing.get("extends", [])
     changed = False
@@ -288,7 +304,11 @@ def _format_renovate(data: dict) -> str:
     for i, k in enumerate(keys):
         v = data[k]
         # Format value
-        if k == "extends" and isinstance(v, list) and all(isinstance(x, str) for x in v):
+        if (
+            k == "extends"
+            and isinstance(v, list)
+            and all(isinstance(x, str) for x in v)
+        ):
             inline = "[" + ", ".join(json.dumps(x) for x in v) + "]"
             line = f"  {json.dumps(k)}: {inline}"
         else:
@@ -331,9 +351,13 @@ def main() -> int:
     )
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
-    publish, allow_no_pages = resolve_publish_flags(args.repo, args.publish, args.allow_no_pages)
+    publish, allow_no_pages = resolve_publish_flags(
+        args.repo, args.publish, args.allow_no_pages
+    )
     if args.repo in REPOS_BUILD_ONLY and args.publish is None:
-        print(f"note: {args.repo} is build-only -> publish=false, allow-no-pages=true (auto)")
+        print(
+            f"note: {args.repo} is build-only -> publish=false, allow-no-pages=true (auto)"
+        )
     elif args.repo in REPOS_BUILD_ONLY and args.publish is True:
         print(
             f"WARNING: --publish forced on build-only repo {args.repo}; "
