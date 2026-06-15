@@ -1,0 +1,43 @@
+# Pylint config for shared-workflows' helper/automation scripts + pytest tests.
+# Read by super-linter (PYTHON_PYLINT_CONFIG_FILE defaults to this path).
+[MASTER]
+# Let pylint resolve sibling-module imports (scripts/ is not a package).
+init-hook='import sys; sys.path.insert(0, "scripts")'
+
+[FORMAT]
+max-line-length = 100
+
+[MESSAGES CONTROL]
+# Disabled with rationale (rules that are wrong or noisy for this codebase):
+#   C0103              invalid-name — CLI scripts use hyphenated filenames
+#                      (add-workflow-permissions.py); module-level locals in
+#                      one-off scripts aren't constants.
+#   C0114/C0115/C0116  missing module/class/function docstrings — pedantic for
+#                      one-off helper scripts and pytest tests.
+#   C0301              line-too-long — black is the sole authority on code width
+#                      (line-length 100); only long comments/strings remain.
+#   C0411              wrong-import-order — isort owns import ordering.
+#   C0413              wrong-import-position — scripts intentionally sys.path-insert
+#                      before importing sibling modules.
+#   C1803              use-implicit-booleaness — `== []` is intentional/explicit in
+#                      assertions that check for an empty failure list.
+#   R0801              duplicate-code — copy-paste detection is disabled fleet-wide
+#                      (JSCPD survey 2026-05-07: 0 genuine refactor candidates).
+#   R0903              too-few-public-methods — irrelevant for config/data holders.
+#   R1724              no-else-continue — an explicit else after continue is clearer
+#                      in the with:-block insertion logic.
+#   W1510              subprocess-run-check — these wrappers deliberately inspect
+#                      returncode rather than raising.
+disable =
+    C0103,
+    C0114,
+    C0115,
+    C0116,
+    C0301,
+    C0411,
+    C0413,
+    C1803,
+    R0801,
+    R0903,
+    R1724,
+    W1510

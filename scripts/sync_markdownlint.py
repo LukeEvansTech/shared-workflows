@@ -3,6 +3,7 @@
 
 Run after editing the canonical template. Idempotent.
 """
+
 import base64
 import json
 import subprocess
@@ -49,14 +50,33 @@ def main() -> int:
                 print(f"{repo}: NO-CHANGE")
                 continue
             sha = data["sha"]
-            r = gh(["api", "-X", "PUT", f"repos/{repo}/contents/.markdownlint.yml",
-                    "-f", "message=chore: sync canonical markdownlint config",
-                    "-f", f"content={canonical_b64}",
-                    "-f", f"sha={sha}"])
+            r = gh(
+                [
+                    "api",
+                    "-X",
+                    "PUT",
+                    f"repos/{repo}/contents/.markdownlint.yml",
+                    "-f",
+                    "message=chore: sync canonical markdownlint config",
+                    "-f",
+                    f"content={canonical_b64}",
+                    "-f",
+                    f"sha={sha}",
+                ]
+            )
         else:
-            r = gh(["api", "-X", "PUT", f"repos/{repo}/contents/.markdownlint.yml",
-                    "-f", "message=chore: add canonical markdownlint config",
-                    "-f", f"content={canonical_b64}"])
+            r = gh(
+                [
+                    "api",
+                    "-X",
+                    "PUT",
+                    f"repos/{repo}/contents/.markdownlint.yml",
+                    "-f",
+                    "message=chore: add canonical markdownlint config",
+                    "-f",
+                    f"content={canonical_b64}",
+                ]
+            )
         if r.returncode == 0:
             sha = json.loads(r.stdout)["commit"]["sha"][:7]
             print(f"{repo}: OK {sha}")

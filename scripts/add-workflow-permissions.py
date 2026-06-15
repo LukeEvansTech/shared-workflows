@@ -18,6 +18,7 @@ top-level default at runtime, so workflows that previously relied on
 write-all defaults will need per-job adjustments. Those manifest as run
 failures, which we'll surface and fix individually.
 """
+
 import sys
 from pathlib import Path
 
@@ -26,15 +27,21 @@ PERMISSIONS_BLOCK = """permissions:
 
 """
 
+
 def has_top_level_permissions(content: str) -> bool:
     """True if any line is exactly `permissions:` at column 0."""
     for line in content.splitlines():
         stripped = line.rstrip()
-        if stripped == "permissions:" or stripped.startswith("permissions:") and not line.startswith(" "):
+        if (
+            stripped == "permissions:"
+            or stripped.startswith("permissions:")
+            and not line.startswith(" ")
+        ):
             # Top-level (column 0) permissions line
             if not line.startswith(" ") and not line.startswith("\t"):
                 return True
     return False
+
 
 def patch_workflow(path: Path) -> str:
     content = path.read_text()
@@ -57,6 +64,7 @@ def patch_workflow(path: Path) -> str:
     path.write_text("".join(new_lines))
     return "patched"
 
+
 def main():
     if len(sys.argv) != 2:
         sys.exit(f"usage: {sys.argv[0]} <repo-dir>")
@@ -71,6 +79,7 @@ def main():
             continue
         result = patch_workflow(f)
         print(f"  {f.relative_to(root)}: {result}")
+
 
 if __name__ == "__main__":
     main()

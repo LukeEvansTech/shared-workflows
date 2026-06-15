@@ -17,3 +17,6 @@ jobs:
       statuses: write
       pull-requests: write
     uses: ./.github/workflows/super-linter.yml
+    with:
+      # Graduated: Python (+ all other) findings are clean, so block on failures.
+      soft-launch: false

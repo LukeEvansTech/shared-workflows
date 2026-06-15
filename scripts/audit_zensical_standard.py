@@ -3,7 +3,10 @@
 
 Clones each into a temp dir, runs zensical_drift.py against it, collects results.
 """
-import subprocess, tempfile, sys
+
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 REPOS_PUBLISHING = [
@@ -33,7 +36,9 @@ DRIFT = Path(__file__).parent / "zensical_drift.py"
 
 def audit(repo: str, allow_no_pages: bool) -> tuple[int, str]:
     with tempfile.TemporaryDirectory() as tmp:
-        r = subprocess.run(["gh", "repo", "clone", repo, tmp, "--", "--depth=1"], capture_output=True, text=True)
+        r = subprocess.run(
+            ["gh", "repo", "clone", repo, tmp, "--", "--depth=1"], capture_output=True, text=True
+        )
         if r.returncode != 0:
             return 1, f"clone failed: {r.stderr.strip()}"
         args = ["python3", str(DRIFT), "--repo-root", tmp, "--repo", repo]
