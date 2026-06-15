@@ -78,7 +78,7 @@ jobs:
 
 Tagged `v1`. Callers pin to `@v1` and get non-breaking updates automatically.
 
-A `renovate.json` (preset `config:recommended`) on this repo only — Renovate opens **one** PR per super-linter release, propagating to all callers via the floating `@v1` tag.
+A `.renovaterc.json5` (extends `github>LukeEvansTech/renovate-config`) on this repo only — Renovate opens **one** PR per super-linter release, propagating to all callers via the floating `@v1` tag.
 
 ### 2. Per-repo caller workflow
 
@@ -144,7 +144,7 @@ Super-linter reads linter config files from `LINTER_RULES_PATH` (default `.githu
 - Create `LukeEvansTech/shared-workflows` (public)
 - Author the reusable workflow with soft-launch defaults
 - Tag `v1`
-- Enable Renovate (single `renovate.json`)
+- Enable Renovate (single `.renovaterc.json5`)
 - Write README with usage snippet
 - Author `scripts/rollout-lint-workflow.sh` (used in Phase 2)
 - Move this design doc into the repo as the founding documentation
