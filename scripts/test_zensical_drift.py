@@ -202,3 +202,14 @@ def test_renovate_url_with_comment_parses_not_fallback(tmp_path):
     )
     failures = _run_check_renovate(tmp_path, {".renovaterc.json5": content})
     assert failures and "extends must include" in failures[0]
+
+
+def test_renovate_accepts_house_idiom_unquoted_keys(tmp_path):
+    # Prettier's JSON5 idiom for the fleet: unquoted keys + trailing comma.
+    content = (
+        "{\n"
+        '  $schema: "https://docs.renovatebot.com/renovate-schema.json",\n'
+        '  extends: ["github>LukeEvansTech/renovate-config"],\n'
+        "}\n"
+    )
+    assert _run_check_renovate(tmp_path, {".renovaterc.json5": content}) == []

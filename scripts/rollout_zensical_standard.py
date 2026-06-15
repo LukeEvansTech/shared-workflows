@@ -175,7 +175,8 @@ def _read_remote_renovate(repo: str) -> tuple[str | None, str | None]:
 
 def update_renovate(repo: str, dry_run: bool) -> None:
     canonical_text = (TEMPLATES / RENOVATE_TARGET).read_text()
-    canonical = json.loads(canonical_text)
+    # Template is JSON5 (house idiom: unquoted keys); parse tolerantly.
+    canonical = json.loads(_strip_jsonc(canonical_text))
     existing_path, existing_raw = _read_remote_renovate(repo)
     if existing_raw is None:
         # No config yet — write canonical verbatim

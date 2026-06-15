@@ -159,15 +159,17 @@ CENTRAL_PRESET = "github>LukeEvansTech/renovate-config"
 def _strip_jsonc(text: str) -> str:
     """Best-effort JSON5/JSONC → JSON so stdlib json can parse it.
 
-    Drops `//` line comments, `/* */` block comments, and trailing commas —
-    enough for the comment-bearing `.renovaterc.json5` files the fleet uses.
-    Unquoted keys are not rewritten here; check_renovate falls back to a
-    substring check for the preset reference when a parse still fails.
+    Handles the house `.renovaterc.json5` idiom (prettier-formatted): `//` line
+    comments, `/* */` block comments, trailing commas, and unquoted identifier
+    keys. Keys with non-identifier characters are already quoted in valid JSON5;
+    check_renovate falls back to a substring check if a parse still fails.
     """
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)  # block comments
     # line comments — `(?<!:)` so we don't eat the `//` in `https://` URLs
     text = re.sub(r"(?m)(?<!:)//[^\n]*$", "", text)
     text = re.sub(r",(\s*[}\]])", r"\1", text)              # trailing commas
+    # quote unquoted identifier keys: `  extends:` -> `  "extends":`
+    text = re.sub(r'(?m)^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)', r'\1"\2"\3', text)
     return text
 
 

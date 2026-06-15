@@ -1,5 +1,5 @@
 {
   // JSON5: comments are allowed (and exercised by the drift check's tolerant parse).
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>LukeEvansTech/renovate-config"],
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["github>LukeEvansTech/renovate-config"],
 }
