@@ -12,6 +12,33 @@ After the 2026-05-26 rollout to 18 repos, several items surfaced as content/secu
 
 ---
 
+## Mermaid support (added 2026-06-16)
+
+The standard now supports Mermaid diagrams in zensical sites. The canonical
+config (`tests/fixtures/zensical/good/docs/zensical.toml`) uses the **table form**
+of superfences:
+
+```toml
+[markdown_extensions.pymdownx.superfences]
+custom_fences = [{ name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }]
+```
+
+- **Why the table form:** the old inline `superfences = {}` silently does NOT
+  register the custom fence, so ```mermaid passed through unrendered. Verified
+  with zensical 0.0.45 (build → `<pre class="mermaid">`; live browser → rendered
+  SVG). The Material theme auto-injects mermaid.js — **from the unpkg CDN at
+  runtime**, so rendering needs browser network access (not self-hosted).
+- **Enabled, not enforced:** `scripts/zensical_drift.py` does NOT check
+  superfences, so this is drift-safe and does not break repos that haven't
+  adopted it yet. (Deliberately not added to the drift check — that would fail
+  every un-synced repo's PRs immediately.)
+- **Propagation:** `scripts/sync_mermaid_superfences.py` rewrites the inline form
+  to the table form across all repos in `audit_zensical_standard.REPOS_*`
+  (idempotent, TOML-validated). ⏸️ Not yet run fleet-wide — 6 repos already got
+  it via the 2026-06-16 ascii→mermaid PRs; run the sync to cover the rest.
+
+---
+
 ## Docs `--strict` failures (6 repos)
 
 ### ✅ PSReddit
