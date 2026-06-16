@@ -3,6 +3,7 @@
 Guards the mermaid-enablement rewrite: it must register a real custom_fence,
 produce valid TOML, and be idempotent. See memory project_zensical_mermaid_support.
 """
+
 import tomllib
 
 from sync_mermaid_superfences import already_enabled, enable_mermaid

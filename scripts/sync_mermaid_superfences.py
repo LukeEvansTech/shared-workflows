@@ -21,6 +21,7 @@ can't transform cleanly. Mirrors sync_markdownlint.py (commits via the gh API).
 Usage:
     python3 scripts/sync_mermaid_superfences.py [--dry-run]
 """
+
 import base64
 import json
 import re
@@ -28,7 +29,7 @@ import subprocess
 import sys
 import tomllib
 
-from audit_zensical_standard import REPOS_PUBLISHING, REPOS_BUILD_ONLY
+from audit_zensical_standard import REPOS_BUILD_ONLY, REPOS_PUBLISHING
 
 REPOS = REPOS_PUBLISHING + REPOS_BUILD_ONLY
 
@@ -45,11 +46,7 @@ def gh(args):
 
 def already_enabled(text: str) -> bool:
     data = tomllib.loads(text)
-    sf = (
-        data.get("markdown_extensions", {})
-        .get("pymdownx", {})
-        .get("superfences", {})
-    )
+    sf = data.get("markdown_extensions", {}).get("pymdownx", {}).get("superfences", {})
     return isinstance(sf, dict) and bool(sf.get("custom_fences"))
 
 
@@ -94,12 +91,20 @@ def main() -> int:
             print(f"{repo}: WOULD UPDATE")
             continue
         content_b64 = base64.b64encode(updated.encode()).decode()
-        w = gh([
-            "api", "-X", "PUT", f"repos/{repo}/contents/docs/zensical.toml",
-            "-f", "message=feat(docs): enable mermaid via superfences custom_fences",
-            "-f", f"content={content_b64}",
-            "-f", f"sha={data['sha']}",
-        ])
+        w = gh(
+            [
+                "api",
+                "-X",
+                "PUT",
+                f"repos/{repo}/contents/docs/zensical.toml",
+                "-f",
+                "message=feat(docs): enable mermaid via superfences custom_fences",
+                "-f",
+                f"content={content_b64}",
+                "-f",
+                f"sha={data['sha']}",
+            ]
+        )
         if w.returncode == 0:
             print(f"{repo}: OK {json.loads(w.stdout)['commit']['sha'][:7]}")
         else:
