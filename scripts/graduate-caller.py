@@ -5,6 +5,7 @@ graduating it from soft-launch to blocking.
 
 Idempotent — won't add the line if already present.
 """
+
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ if len(sys.argv) != 2:
     sys.exit(f"usage: {sys.argv[0]} <path-to-lint.yml>")
 
 path = Path(sys.argv[1])
-content = path.read_text()
+content = path.read_text(encoding="utf-8")
 lines = content.splitlines()
 
 # Already graduated?
@@ -77,5 +78,5 @@ if not inserted:
 
 # Preserve trailing newline
 suffix = "\n" if content.endswith("\n") else ""
-path.write_text("\n".join(out) + suffix)
+path.write_text("\n".join(out) + suffix, encoding="utf-8")
 print(f"{path}: graduated")

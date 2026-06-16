@@ -1,0 +1,3 @@
+[lint]
+# E402: intentional post-sys.path sibling imports in helper/test scripts.
+ignore = ["E402"]

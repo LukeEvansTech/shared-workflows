@@ -1,2 +1,3 @@
 .rollout-logs/
 __pycache__/
+*.pyc

@@ -15,6 +15,25 @@ on:
         description: Comma-separated Checkov frameworks to load (kubernetes, helm, terraform, dockerfile, ...)
         type: string
         default: kubernetes,helm
+      checkov-skip-check:
+        description: >-
+          Comma-separated Checkov check IDs to skip (passed to checkov
+          --skip-check). The default is fleet policy, not per-repo trivia: it
+          waives the GitHub-governance checks that only ever fire on the
+          GitHub-management terraform repo and are deliberate choices for a
+          solo, public-friendly fleet —
+          CKV_GIT_1 (repos are public by design; bucketed public/private),
+          CKV_GIT_3 (vuln alerts are managed via the dedicated
+          github_repository_vulnerability_alerts resource, which Checkov can't
+          trace from the github_repository — always a false positive here),
+          CKV_GIT_5 (solo operator: required approvals is 0 by design — you
+          can't approve your own PR), and
+          CKV_GIT_6 (signed commits deferred until bots sign — tracked in
+          terraform). These no-op on every other repo (no github_repository
+          resources). NOT skipped: CKV2_GIT_1 (branch protection) — enforced via
+          terraform. Override per-repo to widen/narrow.
+        type: string
+        default: CKV_GIT_1,CKV_GIT_3,CKV_GIT_5,CKV_GIT_6
       trivy-severity:
         description: Trivy severity filter
         type: string
@@ -54,15 +73,40 @@ jobs:
         with:
           directory: .
           framework: ${{ inputs.checkov-frameworks }}
+          # Fleet-policy waivers (see the checkov-skip-check input). Empty = none.
+          skip_check: ${{ inputs.checkov-skip-check }}
           output_format: sarif
           output_file_path: checkov-results.sarif
           quiet: true
+          # Visibility-aware gate. Public repos: soft_fail=true so findings don't
+          # red the build — they surface in GitHub Code Scanning via the SARIF
+          # upload below. Private repos have no free Code Scanning, so soft_fail
+          # =false makes Checkov exit non-zero on a failed check, gating the PR
+          # here instead. (Matches Trivy's exit-code behavior below.)
+          soft_fail: ${{ !github.event.repository.private }}
 
-      - name: Upload Checkov SARIF
+      # Public repos only: SARIF -> Code Scanning (free on public; needs GHAS on
+      # private, where this step would fail even on a clean scan). The Checkov
+      # step itself is the gate on private repos.
+      - name: Upload Checkov SARIF (public repos)
+        if: ${{ !github.event.repository.private }}
         uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
         with:
           sarif_file: checkov-results.sarif
           category: checkov
+
+      - name: Checkov result summary (private repos)
+        if: ${{ always() && github.event.repository.private }}
+        shell: bash
+        run: |
+          # Best-effort count for the job summary; the gate is the Checkov step's
+          # own exit code, so a parse miss here ('?') never changes pass/fail.
+          count="$(jq '[.runs[].results[]] | length' checkov-results.sarif 2>/dev/null || echo '?')"
+          {
+            echo "### Checkov — private-repo gate (no Code Scanning)"
+            echo ""
+            echo "Findings: **${count}** — see the Checkov step log for detail."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   trivy:
     if: ${{ inputs.enable-trivy }}
@@ -87,6 +131,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-trivy-
 
+      # The trivy-action errors with "cannot find ignorefile" when trivyignores
+      # points at a file that doesn't exist. Resolve to an empty value (no-op)
+      # unless the configured file is actually present, so a missing
+      # .trivyignore.yaml is harmless.
+      - name: Resolve trivyignore (no-op when absent)
+        id: trivyignore
+        shell: bash
+        env:
+          TRIVYIGNORE: ${{ inputs.trivyignore-file }}
+        run: |
+          if [ -n "${TRIVYIGNORE}" ] && [ -f "${TRIVYIGNORE}" ]; then
+            echo "file=${TRIVYIGNORE}" >> "$GITHUB_OUTPUT"
+            echo "using trivyignore: ${TRIVYIGNORE}"
+          else
+            echo "file=" >> "$GITHUB_OUTPUT"
+            echo "no trivyignore at '${TRIVYIGNORE:-<unset>}' — skipping"
+          fi
+
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -97,11 +159,33 @@ jobs:
           severity: ${{ inputs.trivy-severity }}
           scanners: ${{ inputs.trivy-scanners }}
           # `trivyignores` (one word, no dash) is the documented action input;
-          # the action does NOT auto-discover .trivyignore.yaml.
-          trivyignores: ${{ inputs.trivyignore-file }}
+          # the action does NOT auto-discover .trivyignore.yaml. Empty = no-op.
+          trivyignores: ${{ steps.trivyignore.outputs.file }}
+          # Visibility-aware gate. Public: exit-code 0 (findings surface in Code
+          # Scanning via the SARIF upload). Private (no free Code Scanning):
+          # exit-code 1 so Trivy fails the PR on findings here instead.
+          exit-code: ${{ github.event.repository.private && '1' || '0' }}
 
-      - name: Upload Trivy SARIF
+      # Public repos only: SARIF -> Code Scanning. The Trivy step's exit-code is
+      # the gate on private repos (where this upload needs GHAS and would fail).
+      - name: Upload Trivy SARIF (public repos)
+        if: ${{ !github.event.repository.private }}
         uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy
+
+      - name: Trivy result summary (private repos)
+        if: ${{ always() && github.event.repository.private }}
+        shell: bash
+        env:
+          TRIVY_SEVERITY: ${{ inputs.trivy-severity }}
+        run: |
+          # Best-effort count for the job summary; the gate is the Trivy step's
+          # own exit code, so a parse miss here ('?') never changes pass/fail.
+          count="$(jq '[.runs[].results[]] | length' trivy-results.sarif 2>/dev/null || echo '?')"
+          {
+            echo "### Trivy — private-repo gate (no Code Scanning)"
+            echo ""
+            echo "Findings (severity ${TRIVY_SEVERITY}): **${count}** — see the Trivy step log for detail."
+          } >> "$GITHUB_STEP_SUMMARY"
