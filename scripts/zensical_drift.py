@@ -217,13 +217,47 @@ def _strip_jsonc(text: str) -> str:
     """Best-effort JSON5/JSONC → JSON so stdlib json can parse it.
 
     Handles the house `.renovaterc.json5` idiom (prettier-formatted): `//` line
-    comments, `/* */` block comments, trailing commas, and unquoted identifier
-    keys. Keys with non-identifier characters are already quoted in valid JSON5;
-    check_renovate falls back to a substring check if a parse still fails.
+    comments, `/* */` block comments (both only OUTSIDE string literals),
+    trailing commas, and unquoted identifier keys. Keys with non-identifier
+    characters are already quoted in valid JSON5; check_renovate falls back to
+    a substring check if a parse still fails.
     """
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)  # block comments
-    # line comments — `(?<!:)` so we don't eat the `//` in `https://` URLs
-    text = re.sub(r"(?m)(?<!:)//[^\n]*$", "", text)
+    # Comment removal is STRING-AWARE: a regex-only pass treats `/*` inside a
+    # string literal (e.g. ignorePaths: [".archive/**"]) as a comment opener,
+    # and the first `*/` anywhere later (even inside another comment, e.g. a
+    # `kubernetes/**/...` glob mentioned in prose) as its closer — swallowing
+    # everything between, including the extends line (talos-cluster #3709).
+    out: list[str] = []
+    i, n = 0, len(text)
+    quote: str | None = None
+    while i < n:
+        c = text[i]
+        if quote is not None:
+            out.append(c)
+            if c == "\\" and i + 1 < n:  # keep escaped chars verbatim
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c in "\"'":
+            quote = c
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":  # line comment
+            j = text.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":  # block comment
+            j = text.find("*/", i + 2)
+            i = n if j == -1 else j + 2
+            continue
+        out.append(c)
+        i += 1
+    text = "".join(out)
     text = re.sub(r",(\s*[}\]])", r"\1", text)  # trailing commas
     # quote unquoted identifier keys: `  extends:` -> `  "extends":`
     text = re.sub(r"(?m)^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)", r'\1"\2"\3', text)
