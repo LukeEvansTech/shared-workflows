@@ -275,5 +275,7 @@ def test_strip_jsonc_is_string_aware():
 def test_strip_jsonc_keeps_urls():
     """`//` inside a string (https URLs) must survive comment stripping."""
     mod = _load_module()
-    url = mod._strip_jsonc('{ $schema: "https://example.com/x.json" }')  # pylint: disable=protected-access
+    url = mod._strip_jsonc(  # pylint: disable=protected-access
+        '{ $schema: "https://example.com/x.json" }'
+    )
     assert "https://example.com/x.json" in url
