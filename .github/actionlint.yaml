@@ -1,11 +1,1 @@
----
-# actionlint 1.7.x does not yet model the `job.workflow_*` context properties
-# (job.workflow_sha / job.workflow_repository / job.workflow_ref /
-# job.workflow_file_path). They are real and documented -- GitHub's own contexts
-# reference shows a reusable workflow using them to check out its own source:
-# https://docs.github.com/en/actions/reference/workflows-and-actions/contexts
-# Remove this ignore once actionlint knows the properties.
-paths:
-  .github/workflows/zensical-drift-check.yml:
-    ignore:
-      - 'property "workflow_(sha|repository)" is not defined in object type'
+linters/actionlint.yml
