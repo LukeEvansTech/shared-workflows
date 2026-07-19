@@ -1,5 +1,7 @@
 """Tests for zensical_drift.py."""
 
+import importlib.util
+import json
 import subprocess
 from pathlib import Path
 
@@ -239,20 +241,23 @@ def test_renovate_accepts_house_idiom_unquoted_keys(tmp_path):
     assert _run_check_renovate(tmp_path, {".renovaterc.json5": content}) == []
 
 
+def _load_module():
+    """Import zensical_drift.py as a module for unit-testing helpers."""
+    spec = importlib.util.spec_from_file_location("zensical_drift", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_strip_jsonc_is_string_aware():
     """`/*` inside a string + `*/` inside a later comment must not pair up.
 
     Regression: talos-cluster's `ignorePaths: [".archive/**"]` (line 3) plus a
     `kubernetes/**/...` glob mentioned in a much later `//` comment made the old
-    regex-based stripper swallow everything between them — including the
-    `extends` line — failing check_renovate on an otherwise-valid config.
+    regex-based stripper swallow everything between them -- including the
+    `extends` line -- failing check_renovate on an otherwise-valid config.
     """
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("zensical_drift", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
+    mod = _load_module()
     sample = """{
   ignorePaths: [".archive/**"],
   extends: ["github>LukeEvansTech/renovate-config"],
@@ -261,15 +266,14 @@ def test_strip_jsonc_is_string_aware():
 }"""
     stripped = mod._strip_jsonc(sample)  # pylint: disable=protected-access
     assert "github>LukeEvansTech/renovate-config" in stripped
-    import json
-
     data = json.loads(stripped)
     assert data["ignorePaths"] == [".archive/**"]
     assert data["extends"] == ["github>LukeEvansTech/renovate-config"]
     assert "real block comment" not in stripped
 
-    # URLs inside strings keep their `//`
-    url = mod._strip_jsonc(
-        '{ $schema: "https://example.com/x.json" }'
-    )  # pylint: disable=protected-access
+
+def test_strip_jsonc_keeps_urls():
+    """`//` inside a string (https URLs) must survive comment stripping."""
+    mod = _load_module()
+    url = mod._strip_jsonc('{ $schema: "https://example.com/x.json" }')  # pylint: disable=protected-access
     assert "https://example.com/x.json" in url
