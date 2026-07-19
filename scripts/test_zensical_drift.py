@@ -237,3 +237,39 @@ def test_renovate_accepts_house_idiom_unquoted_keys(tmp_path):
         "}\n"
     )
     assert _run_check_renovate(tmp_path, {".renovaterc.json5": content}) == []
+
+
+def test_strip_jsonc_is_string_aware():
+    """`/*` inside a string + `*/` inside a later comment must not pair up.
+
+    Regression: talos-cluster's `ignorePaths: [".archive/**"]` (line 3) plus a
+    `kubernetes/**/...` glob mentioned in a much later `//` comment made the old
+    regex-based stripper swallow everything between them — including the
+    `extends` line — failing check_renovate on an otherwise-valid config.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("zensical_drift", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    sample = """{
+  ignorePaths: [".archive/**"],
+  extends: ["github>LukeEvansTech/renovate-config"],
+  // per-app twins in kubernetes/**/ocirepository.yaml are exempt
+  rebaseWhen: "conflicted", /* real block comment */
+}"""
+    stripped = mod._strip_jsonc(sample)  # pylint: disable=protected-access
+    assert "github>LukeEvansTech/renovate-config" in stripped
+    import json
+
+    data = json.loads(stripped)
+    assert data["ignorePaths"] == [".archive/**"]
+    assert data["extends"] == ["github>LukeEvansTech/renovate-config"]
+    assert "real block comment" not in stripped
+
+    # URLs inside strings keep their `//`
+    url = mod._strip_jsonc(
+        '{ $schema: "https://example.com/x.json" }'
+    )  # pylint: disable=protected-access
+    assert "https://example.com/x.json" in url
