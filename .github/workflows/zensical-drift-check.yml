@@ -19,23 +19,32 @@ jobs:
       contents: read
     steps:
       - name: Checkout target repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           path: target
 
+      # Check out THIS workflow's own commit, not `main`. Callers pin us by SHA
+      # (`@<sha> # v1`), but that pin covers only this YAML file -- a `ref: main`
+      # checkout fetches the drift script and canonical templates unpinned, so any
+      # commit to main changes the behaviour of every calling repository at once
+      # and the callers' pins give false assurance. (Seen in practice: a stripper
+      # bug and its fix both reached all repos instantly, regardless of pin.)
+      # `job.workflow_sha` is the commit SHA of the reusable workflow file defining
+      # this job, so the logic always matches the pinned workflow. GitHub documents
+      # exactly this pattern for a reusable workflow checking out its own source.
       - name: Checkout shared-workflows (for drift script + canonical templates)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          repository: LukeEvansTech/shared-workflows
-          ref: main
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: shared-workflows
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: '3.14'
+          python-version: "3.14"
 
       - name: Run drift check
         env:
