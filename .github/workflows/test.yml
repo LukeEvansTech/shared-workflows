@@ -1,0 +1,56 @@
+---
+name: Test
+
+# This repo is the control plane for the estate's CI -- super-linter.yml is
+# consumed by every active repo, and zensical-drift-check.yml gates the docs
+# standard fleet-wide. Its own 37 tests had never been run by anything.
+#
+# A regression here does not break one repo, it breaks the check every repo
+# relies on, and it breaks it silently: a drift checker that stops detecting
+# drift reports success.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Script tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # No mise.toml, Dockerfile or package metadata to read a version from --
+      # this repo ships workflows, not a Python artifact, and pyproject.toml is
+      # formatter/linter config only. So the version is declared here, and
+      # should track whatever the estate's Python repos are on.
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      # The tests import only the standard library plus their sibling scripts
+      # (zensical_drift, audit_zensical_standard, rollout_zensical_standard,
+      # sync_mermaid_superfences), so pytest is the entire dependency set.
+      # No requirements file is needed and adding one would be misleading.
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
+
+      # The suite drives the fixture corpus under tests/fixtures/zensical/:
+      # one `good` repo plus ten deliberately-broken ones, each asserted by a
+      # named test. Those negative cases are what stop the drift checker
+      # degrading into a no-op, which is precisely the failure this workflow
+      # exists to catch.
+      - name: Run tests
+        run: pytest scripts/ -q
