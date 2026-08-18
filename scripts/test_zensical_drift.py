@@ -104,17 +104,40 @@ def test_good_fixture_passes_overall():
 import shutil
 
 
-def has_gh():
-    return shutil.which("gh") is not None
+def has_authenticated_gh():
+    """gh present *and* logged in.
+
+    The three tests below make live GitHub API calls against private repos, so
+    the binary merely existing is not enough -- an unauthenticated gh returns an
+    error the drift script reports as "[pages] Pages is not enabled", which
+    fails the assertion for an environment reason rather than a code one.
+    GitHub-hosted runners ship gh preinstalled and unauthenticated, which is
+    exactly that case. The repo-scoped GITHUB_TOKEN cannot stand in: these
+    assertions read the Pages configuration of *other* private repos.
+    """
+    if shutil.which("gh") is None:
+        return False
+    return (
+        subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
 
 
-@pytest.mark.skipif(not has_gh(), reason="gh CLI not available in this env")
+@pytest.mark.skipif(
+    not has_authenticated_gh(), reason="needs an authenticated gh CLI (live API call)"
+)
 def test_pages_check_skipped_when_no_repo_arg():
     result = run_drift("good")
     assert "[pages]" not in result.stdout + result.stderr
 
 
-@pytest.mark.skipif(not has_gh(), reason="gh CLI not available in this env")
+@pytest.mark.skipif(
+    not has_authenticated_gh(), reason="needs an authenticated gh CLI (live API call)"
+)
 def test_pages_check_passes_on_known_workflow_repo():
     """Live test against M365LabelSync which has build_type=workflow as of 2026-05-26."""
     result = subprocess.run(
@@ -132,7 +155,9 @@ def test_pages_check_passes_on_known_workflow_repo():
     assert "[pages]" not in (result.stdout + result.stderr)
 
 
-@pytest.mark.skipif(not has_gh(), reason="gh CLI not available in this env")
+@pytest.mark.skipif(
+    not has_authenticated_gh(), reason="needs an authenticated gh CLI (live API call)"
+)
 def test_pages_check_allow_no_pages():
     """With --allow-no-pages, an empty Pages response should not fail."""
     result = subprocess.run(
