@@ -258,3 +258,50 @@ jobs:
           # off. Keeps every VALIDATE_* in the exclude (false) polarity that
           # super-linter v8 requires.
           VALIDATE_ENV: false
+          # PYTHON_RUFF_FORMAT is disabled: black and ruff format are BOTH
+          # enabled by default and they are not reconcilable, so a Python
+          # caller cannot make both green. super-linter says so itself on every
+          # run — "Black and Ruff are both enabled, and might conflict with each
+          # other. To avoid potential conflicts, keep only one of the two
+          # enabled, and disable the other."
+          #
+          # It is not merely a line-length mismatch (black's config here is
+          # empty, so 88; .ruff.toml sets 120). Measured on LukeEvansTech/loupe,
+          # 28 files:
+          #   black then ruff format  -> ruff reformats 11 of black's 16 files,
+          #                              and `black --check` then fails
+          #   both pinned to 120      -> still disagree on 1 file
+          # So matching the widths narrows it but does not close it. Whichever
+          # formatter runs last wins and the other's linter fails, permanently.
+          #
+          # Black is kept because the estate already treats it as the authority
+          # on code width (see this repo's own .github/linters/.flake8 and
+          # .python-lint). PYTHON_RUFF — the *linter* — stays enabled; only the
+          # overlapping formatter goes.
+          VALIDATE_PYTHON_RUFF_FORMAT: false
+          # HTML_PRETTIER is disabled: prettier CORRUPTS server-side templates.
+          # This is not a style disagreement — it silently rewrites application
+          # logic. prettier's HTML parser reads a Jinja/Liquid/Hugo expression
+          # inside a tag as a list of HTML attributes and normalises it.
+          # Measured on LukeEvansTech/loupe, templates/history.html:
+          #
+          #   before: <option value="pass" {% if verdict == 'pass' %}selected{% endif %}>
+          #   after:  <option value="pass" {% if verdict="" ="pass" %}selected{% endif %}>
+          #
+          # `verdict`, `==` and `'pass'` were treated as three attributes and
+          # `verdict` was given an empty value. The template stops parsing
+          # (jinja2: "expected token 'end of statement block', got '='"), so the
+          # history page's verdict filter breaks outright. Six templates were
+          # run through it; one was corrupted this way and the rest were merely
+          # reflowed.
+          #
+          # The danger is the direction of the failure: the linter reports
+          # "Code style issues found. Run Prettier with --write to fix", and
+          # doing exactly what it says is what breaks the app. Six repos in this
+          # estate serve Jinja, Liquid or Hugo templates.
+          #
+          # HTML (htmlhint) stays enabled — with the shared .htmlhintrc staged
+          # above it still catches real accessibility and correctness bugs.
+          # Repos with genuinely static HTML that want prettier formatting can
+          # run it in their own CI, where the file set is theirs to control.
+          VALIDATE_HTML_PRETTIER: false
