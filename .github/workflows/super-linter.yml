@@ -305,7 +305,7 @@ jobs:
         #     chars is a string, URL or comment it cannot break.
         #
         # W503 (line break before binary operator) is added to the flake8 ignore
-        # list pre-emptively: it is a known black conflict and super-linter's
+        # list as a precaution: it is a known black conflict and super-linter's
         # default does not carry it. No caller currently trips it.
         #
         # Not disabled, because they are genuine: E712 comparison-to-True (12),
