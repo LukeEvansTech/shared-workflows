@@ -192,6 +192,168 @@ jobs:
             echo "staged shared .htmlhintrc -> .github/linters/.htmlhintrc"
           fi
 
+      - name: Stage shared pylint config for super-linter
+        # super-linter's bundled default .python-lint disables exactly one rule
+        # (import-error, because it never installs caller dependencies) and
+        # otherwise runs pylint wide open. A full-codebase pass over the four
+        # Python callers (2026-08-18) produced 780 findings. Most are not defects
+        # — they are pylint duplicating or contradicting the other linters that
+        # run in this very same job, or enforcing house style pylint has no
+        # standing to decide:
+        #
+        #   C0411 wrong-import-order (135)   isort runs in this job and owns
+        #   C0413 wrong-import-position (33) import order. C0413 additionally
+        #     fires on the conftest.py idiom of configuring settings/env before
+        #     importing application modules, which is deliberate and required.
+        #   C0301 line-too-long (23)         black runs in this job and owns
+        #     code width. Two authorities on the same byte is a conflict.
+        #   C0114/C0115/C0116 (204)          Missing module/class/function
+        #     docstrings. Pedantic on typed code; ruff's default set does not
+        #     enable pydocstyle either. Biggest single block after import order.
+        #   R0903 too-few-public-methods (69) Fires on every Pydantic model,
+        #     SQLAlchemy model, dataclass and config holder. Structurally
+        #     unsatisfiable for the estate's FastAPI/SQLAlchemy repos.
+        #   C0415 import-outside-toplevel (40) Deferred imports here are
+        #     deliberate: lazy-loading heavy deps (uvicorn in a serve command),
+        #     breaking import cycles, and `import traceback` inside an except.
+        #   W0613 unused-argument (34)       Framework-mandated signatures.
+        #     Every instance is a FastAPI `request`, a `Depends()` guard whose
+        #     value is unused because the enforcement is the side effect, an
+        #     ASGI lifespan `app`, a SQLAlchemy `connection_record`, or a pytest
+        #     fixture requested for its side effect.
+        #   R0902/R0911/R0912/R0913/R0914/   Complexity metrics (too-many-*).
+        #   R0915/R0917/R1702 (74)           Arbitrary thresholds, no defect
+        #     implied; flake8 and ruff do not enable their equivalents.
+        #   C0103 invalid-name               CLI scripts use hyphenated names.
+        #   C1803 / R0801 / R1724 / W1510    Carried over from this repo's own
+        #     .python-lint, where each is justified in situ. R0801 duplicate-code
+        #     is disabled fleet-wide (JSCPD survey 2026-05-07: 0 genuine).
+        #
+        # That clears 617 of 780. The 163 that remain are genuine and fixable —
+        # bare-except, broad-exception-caught, raise-missing-from, unused
+        # variables/imports, unspecified-encoding, singleton-comparison,
+        # redefined-builtin, global-statement — and are deliberately left ON.
+        #
+        # W0621 redefined-outer-name is the notable keep. 57 of its 69 hits are
+        # the pytest fixture idiom (harmless) but the other 12 are real shadowing
+        # in application code — a function parameter masking the module-level
+        # `app`, a script masking its own `db` handle. A blanket disable would
+        # hide those, so test modules should carry a file-level
+        # `# pylint: disable=redefined-outer-name` instead.
+        #
+        # NOTE: this config is NOT this repo's own .github/linters/.python-lint
+        # copied over. That file omits `import-error`, which is safe here (these
+        # scripts are stdlib + pytest) but catastrophic for callers: copying it
+        # verbatim added 60 fresh E0401 findings to loupe alone, because
+        # super-linter does not install caller dependencies.
+        #
+        # A caller that ships its own .github/linters/.python-lint keeps it —
+        # this only fills the gap, it never overwrites.
+        shell: bash
+        run: |
+          if [ -f .github/linters/.python-lint ]; then
+            echo "caller provides .github/linters/.python-lint — leaving it alone"
+          else
+            mkdir -p .github/linters
+            cat > .github/linters/.python-lint <<'PYLINTRC'
+          [MASTER]
+          jobs = 0
+
+          [MESSAGES CONTROL]
+          disable =
+              import-error,
+              C0103,
+              C0114,
+              C0115,
+              C0116,
+              C0301,
+              C0411,
+              C0413,
+              C0415,
+              C1803,
+              R0801,
+              R0902,
+              R0903,
+              R0911,
+              R0912,
+              R0913,
+              R0914,
+              R0915,
+              R0917,
+              R1702,
+              R1724,
+              W0613,
+              W1510
+          PYLINTRC
+            echo "staged shared .python-lint -> .github/linters/.python-lint"
+          fi
+
+      - name: Stage shared flake8 + ruff configs for super-linter
+        # Same gap as the pylint config above, for the other two Python linters
+        # this repo already carries a config for. super-linter's bundled
+        # defaults are max-line-length 120 / extend-ignore E203 (flake8) and
+        # ignore E203 (ruff), which leaves two codes firing across every caller
+        # that the estate has already ruled on in writing:
+        #
+        #   E402 module-import-not-at-top (56)  The conftest.py idiom of
+        #     configuring settings/env before importing application modules, and
+        #     helper scripts doing sys.path insertion first. Both deliberate.
+        #     This is the same finding as pylint C0413, disabled above — leaving
+        #     it on in flake8/ruff while off in pylint would be incoherent.
+        #   E501 line-too-long (12, flake8 only)  black runs in this job and is
+        #     the sole authority on code width. Everything black leaves over 120
+        #     chars is a string, URL or comment it cannot break.
+        #
+        # W503 (line break before binary operator) is added to the flake8 ignore
+        # list as a precaution: it is a known black conflict and super-linter's
+        # default does not carry it. No caller currently trips it.
+        #
+        # Not disabled, because they are genuine: E712 comparison-to-True (12),
+        # E722 bare-except (24), F841 unused-variable (4), F824 dead __all__ (2),
+        # E266 too-many-leading-# (2). Most are ruff-autofixable.
+        #
+        # As with pylint, these are NOT this repo's own .github/linters/.flake8
+        # and .ruff.toml copied over. Ours set max-line-length 88 and omit ruff's
+        # cache-dir and line-length; dropping super-linter's `cache-dir =
+        # /tmp/.ruff_cache` and falling back to ruff's default line-length of 88
+        # would both regress callers. Only the ignore lists are shared.
+        #
+        # Note: PYTHON_RUFF_FORMAT reads the same .ruff.toml, so line-length 120
+        # here would fight black's 88 if it were ever re-enabled. It is disabled
+        # estate-wide (#33) precisely because it conflicts with black.
+        #
+        # A caller that ships its own config keeps it — this only fills the gap.
+        shell: bash
+        run: |
+          mkdir -p .github/linters
+          if [ -f .github/linters/.flake8 ]; then
+            echo "caller provides .github/linters/.flake8 — leaving it alone"
+          else
+            cat > .github/linters/.flake8 <<'FLAKE8RC'
+          [flake8]
+          max-line-length = 120
+          # E203/W503: black compatibility. E402: deliberate post-sys.path and
+          # post-settings imports. E501: black owns code width.
+          extend-ignore = E203,W503,E402,E501
+          FLAKE8RC
+            echo "staged shared .flake8 -> .github/linters/.flake8"
+          fi
+          if [ -f .github/linters/.ruff.toml ]; then
+            echo "caller provides .github/linters/.ruff.toml — leaving it alone"
+          else
+            cat > .github/linters/.ruff.toml <<'RUFFTOML'
+          # Keep super-linter's cache location and line length; only the ignore
+          # list is estate policy. E501 is absent because ruff's default rule
+          # selection (E4, E7, E9, F) does not include it.
+          cache-dir = "/tmp/.ruff_cache"
+          line-length = 120
+
+          [lint]
+          ignore = ["E203", "E402"]
+          RUFFTOML
+            echo "staged shared .ruff.toml -> .github/linters/.ruff.toml"
+          fi
+
       - name: Super-Linter
         uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8.6.0
         continue-on-error: ${{ inputs.soft-launch }}
