@@ -9,6 +9,12 @@ max-line-length = 88
 
 [MESSAGES CONTROL]
 # Disabled with rationale (rules that are wrong or noisy for this codebase):
+#   import-error       super-linter never installs caller dependencies, so
+#                      every third-party import would otherwise be flagged.
+#                      Mirrors super-linter's own bundled default. Omitting
+#                      it is what made this file unsafe to copy to callers
+#                      verbatim (60 fresh E0401s on loupe) — the shared
+#                      caller config staged by super-linter.yml carries it.
 #   C0103              invalid-name — CLI scripts use hyphenated filenames
 #                      (add-workflow-permissions.py); module-level locals in
 #                      one-off scripts aren't constants.
@@ -29,6 +35,7 @@ max-line-length = 88
 #   W1510              subprocess-run-check — these wrappers deliberately inspect
 #                      returncode rather than raising.
 disable =
+    import-error,
     C0103,
     C0114,
     C0115,
