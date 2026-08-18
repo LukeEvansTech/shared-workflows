@@ -25,6 +25,17 @@ on:
           docs.yml / docs-standard-check.yml).
         type: string
         default: '(^|/)(vendor|node_modules|\.terraform|\.venv|dist|build|collections)/|(^|/)docs/superpowers/'
+      validate-go-modules:
+        description: >-
+          Run super-linter's GO_MODULES linter (golangci-lint against each
+          directory holding a go.mod). Default true. Set false on Go repos whose
+          module root contains no .go files — the conventional cmd/ layout —
+          where golangci-lint aborts with "no go files to analyze" before
+          linting anything. That fires on every PR touching go.mod, i.e. every
+          Renovate Go bump, and because soft-launch only covers the job, the
+          per-linter commit status fails underneath a green `lint / lint`.
+        type: boolean
+        default: true
       validate-kubernetes-kubeconform:
         description: >-
           Run kubeconform against Kubernetes manifests. Defaults false because
@@ -119,10 +130,22 @@ jobs:
           VALIDATE_BIOME_LINT: false
           # Kubeconform is opt-in per-repo (default false): useful for plain-K8s
           # repos. Flux GitOps repos should use `kustomize build | kubeconform`
-          # against a CRD-aware schema catalog. Default false keeps all
-          # VALIDATE_X flags in the exclude (false) polarity — super-linter v8
-          # requires consistent polarity across all VALIDATE_X env vars.
-          VALIDATE_KUBERNETES_KUBECONFORM: ${{ inputs.validate-kubernetes-kubeconform }}
+          # against a CRD-aware schema catalog.
+          # Both flags below emit '' (not 'true') when enabled. super-linter's
+          # GetValidationInfo() treats an empty VALIDATE_* as UNSET
+          # (`[ -n "${!VALIDATE_LANGUAGE:-}" ]`) and then defaults unset
+          # linters to ANY_FALSE — enabled, given every other flag here is
+          # false. Emitting a literal 'true' would set ANY_TRUE alongside
+          # ANY_FALSE and super-linter hard-errors: "Behavior not supported,
+          # please either only include (VALIDATE=true) or exclude
+          # (VALIDATE=false) linters, but not both".
+          #
+          # The condition is inverted deliberately. GitHub Actions treats the
+          # empty string as FALSY, so the natural-looking
+          #   ${{ inputs.x && '' || 'false' }}
+          # collapses to 'false' in BOTH branches. Do not "simplify" it back.
+          VALIDATE_GO_MODULES: ${{ !inputs.validate-go-modules && 'false' || '' }}
+          VALIDATE_KUBERNETES_KUBECONFORM: ${{ !inputs.validate-kubernetes-kubeconform && 'false' || '' }}
           # Security scanners are owned by the shared security-scans.yml
           # reusable workflow (Checkov + Trivy with SARIF → GitHub Code
           # Scanning, plus a per-repo `.trivyignore.yaml`). Disabling them
