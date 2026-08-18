@@ -288,6 +288,72 @@ jobs:
             echo "staged shared .python-lint -> .github/linters/.python-lint"
           fi
 
+      - name: Stage shared flake8 + ruff configs for super-linter
+        # Same gap as the pylint config above, for the other two Python linters
+        # this repo already carries a config for. super-linter's bundled
+        # defaults are max-line-length 120 / extend-ignore E203 (flake8) and
+        # ignore E203 (ruff), which leaves two codes firing across every caller
+        # that the estate has already ruled on in writing:
+        #
+        #   E402 module-import-not-at-top (56)  The conftest.py idiom of
+        #     configuring settings/env before importing application modules, and
+        #     helper scripts doing sys.path insertion first. Both deliberate.
+        #     This is the same finding as pylint C0413, disabled above — leaving
+        #     it on in flake8/ruff while off in pylint would be incoherent.
+        #   E501 line-too-long (12, flake8 only)  black runs in this job and is
+        #     the sole authority on code width. Everything black leaves over 120
+        #     chars is a string, URL or comment it cannot break.
+        #
+        # W503 (line break before binary operator) is added to the flake8 ignore
+        # list pre-emptively: it is a known black conflict and super-linter's
+        # default does not carry it. No caller currently trips it.
+        #
+        # Not disabled, because they are genuine: E712 comparison-to-True (12),
+        # E722 bare-except (24), F841 unused-variable (4), F824 dead __all__ (2),
+        # E266 too-many-leading-# (2). Most are ruff-autofixable.
+        #
+        # As with pylint, these are NOT this repo's own .github/linters/.flake8
+        # and .ruff.toml copied over. Ours set max-line-length 88 and omit ruff's
+        # cache-dir and line-length; dropping super-linter's `cache-dir =
+        # /tmp/.ruff_cache` and falling back to ruff's default line-length of 88
+        # would both regress callers. Only the ignore lists are shared.
+        #
+        # Note: PYTHON_RUFF_FORMAT reads the same .ruff.toml, so line-length 120
+        # here would fight black's 88 if it were ever re-enabled. It is disabled
+        # estate-wide (#33) precisely because it conflicts with black.
+        #
+        # A caller that ships its own config keeps it — this only fills the gap.
+        shell: bash
+        run: |
+          mkdir -p .github/linters
+          if [ -f .github/linters/.flake8 ]; then
+            echo "caller provides .github/linters/.flake8 — leaving it alone"
+          else
+            cat > .github/linters/.flake8 <<'FLAKE8RC'
+          [flake8]
+          max-line-length = 120
+          # E203/W503: black compatibility. E402: deliberate post-sys.path and
+          # post-settings imports. E501: black owns code width.
+          extend-ignore = E203,W503,E402,E501
+          FLAKE8RC
+            echo "staged shared .flake8 -> .github/linters/.flake8"
+          fi
+          if [ -f .github/linters/.ruff.toml ]; then
+            echo "caller provides .github/linters/.ruff.toml — leaving it alone"
+          else
+            cat > .github/linters/.ruff.toml <<'RUFFTOML'
+          # Keep super-linter's cache location and line length; only the ignore
+          # list is estate policy. E501 is absent because ruff's default rule
+          # selection (E4, E7, E9, F) does not include it.
+          cache-dir = "/tmp/.ruff_cache"
+          line-length = 120
+
+          [lint]
+          ignore = ["E203", "E402"]
+          RUFFTOML
+            echo "staged shared .ruff.toml -> .github/linters/.ruff.toml"
+          fi
+
       - name: Super-Linter
         uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8.6.0
         continue-on-error: ${{ inputs.soft-launch }}
