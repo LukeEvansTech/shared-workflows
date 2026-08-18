@@ -59,7 +59,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           # SARIF emit / linting only needs read-only checkout. (zizmor: artipacked)
@@ -111,7 +111,7 @@ jobs:
           fi
 
       - name: Super-Linter
-        uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8
+        uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8.6.0
         continue-on-error: ${{ inputs.soft-launch }}
         env:
           DEFAULT_BRANCH: ${{ inputs.default-branch }}
