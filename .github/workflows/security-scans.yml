@@ -46,6 +46,24 @@ on:
         description: Path to .trivyignore.yaml relative to repo root (file may be absent)
         type: string
         default: .trivyignore.yaml
+      runner:
+        description: >-
+          Runner label the jobs execute on. Defaults to `ubuntu-latest`
+          (GitHub-hosted), which consumes billable Actions minutes on private
+          repos. Set this to the name of an ARC runner scale set to run the
+          jobs on the Talos cluster instead, where minutes are free.
+
+          The scale set must already exist and its listener must be Running
+          BEFORE a caller sets this — a job requesting a label no runner
+          advertises queues indefinitely rather than failing, so it looks hung
+          rather than broken.
+
+          Personal-account repos (LukeEvansTech/*) can only register runners at
+          repository scope, so each needs its own scale set. Org repos
+          (codelooks-com/*) can share one org-level scale set via a runner
+          group, so the same label works estate-wide there.
+        type: string
+        default: ubuntu-latest
 
 # Top-level: read-only by default. Each job widens as needed.
 # (Checkov CKV2_GHA_1)
@@ -56,7 +74,7 @@ jobs:
   checkov:
     if: ${{ inputs.enable-checkov }}
     name: Checkov (IaC Security)
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
       security-events: write
@@ -111,7 +129,7 @@ jobs:
   trivy:
     if: ${{ inputs.enable-trivy }}
     name: Trivy (Filesystem & Secret Scan)
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
       security-events: write

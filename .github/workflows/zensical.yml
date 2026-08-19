@@ -39,10 +39,28 @@ on:
         description: Pass --strict to zensical build
         type: boolean
         default: true
+      runner:
+        description: >-
+          Runner label the job executes on. Defaults to `ubuntu-latest`
+          (GitHub-hosted), which consumes billable Actions minutes on private
+          repos. Set this to the name of an ARC runner scale set to run the job
+          on the Talos cluster instead, where minutes are free.
+
+          The scale set must already exist and its listener must be Running
+          BEFORE a caller sets this — a job requesting a label no runner
+          advertises queues indefinitely rather than failing, so it looks hung
+          rather than broken.
+
+          Personal-account repos (LukeEvansTech/*) can only register runners at
+          repository scope, so each needs its own scale set. Org repos
+          (codelooks-com/*) can share one org-level scale set via a runner
+          group, so the same label works estate-wide there.
+        type: string
+        default: ubuntu-latest
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -78,7 +96,7 @@ jobs:
   link-check:
     needs: build
     if: inputs.link-check
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -128,7 +146,7 @@ jobs:
   prose:
     needs: build
     if: inputs.vale
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -147,7 +165,7 @@ jobs:
       inputs.publish &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

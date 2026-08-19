@@ -34,6 +34,7 @@ jobs:
 > **Why the SHA pin with `# v1` comment?** GitHub's recommended security pattern (and zizmor's `unpinned-uses` audit) requires SHA pins. The `# v1` trailing comment is a Renovate convention — Renovate bumps **both** the SHA and the comment when the `v1` tag on `shared-workflows` moves. This gives you the security of pin-to-SHA with the readability of pin-to-version.
 >
 > The rollout script (`scripts/rollout-lint-workflow.sh`) auto-resolves and inserts the current `v1` SHA when generating per-repo callers. To get the current SHA manually:
+>
 > ```bash
 > gh api repos/LukeEvansTech/shared-workflows/git/refs/tags/v1 \
 >   --jq '.object.sha' \
@@ -45,12 +46,13 @@ jobs:
 
 ### Inputs
 
-| Input | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `default-branch` | string | `main` | Branch super-linter diffs against |
-| `validate-all-codebase` | boolean | `false` | Lint everything, not just changed files |
-| `soft-launch` | boolean | `true` | When `true`, lint failures don't fail the workflow |
-| `filter-regex-exclude` | string | (vendor/node_modules/.terraform/.venv/dist/build) | Paths to exclude |
+| Input                   | Type    | Default                                           | Purpose                                                                                                            |
+| ----------------------- | ------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `default-branch`        | string  | `main`                                            | Branch super-linter diffs against                                                                                  |
+| `validate-all-codebase` | boolean | `false`                                           | Lint everything, not just changed files                                                                            |
+| `soft-launch`           | boolean | `true`                                            | When `true`, lint failures don't fail the workflow                                                                 |
+| `filter-regex-exclude`  | string  | (vendor/node_modules/.terraform/.venv/dist/build) | Paths to exclude                                                                                                   |
+| `runner`                | string  | `ubuntu-latest`                                   | Runner label to execute on. Set to an ARC runner scale set name to run self-hosted (free minutes on private repos) |
 
 ### Examples
 
@@ -73,6 +75,26 @@ jobs:
     with:
       soft-launch: false
 ```
+
+**Run on a self-hosted ARC runner instead of billable GitHub-hosted minutes:**
+
+```yaml
+jobs:
+  lint:
+    uses: LukeEvansTech/shared-workflows/.github/workflows/super-linter.yml@<sha> # v1
+    with:
+      runner: seedbox-apps-runner
+```
+
+> **Create the runner scale set first.** A job requesting a label that no
+> runner advertises queues indefinitely rather than failing, so a premature
+> `runner:` looks like a hung PR, not a broken one. Confirm the listener is
+> Running (`kubectl get autoscalingrunnerset -n actions-runner-system`) before
+> pointing a caller at it.
+>
+> Personal-account repos can only register runners at repository scope, so each
+> needs its own scale set. Org repos can share one org-level scale set via a
+> runner group.
 
 ### Per-repo rule overrides
 
