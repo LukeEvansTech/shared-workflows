@@ -60,10 +60,28 @@ on:
           VALIDATE_X env vars in the step use the exclude (false) polarity.
         type: boolean
         default: false
+      runner:
+        description: >-
+          Runner label the job executes on. Defaults to `ubuntu-latest`
+          (GitHub-hosted), which consumes billable Actions minutes on private
+          repos. Set this to the name of an ARC runner scale set to run the job
+          on the Talos cluster instead, where minutes are free.
+
+          The scale set must already exist and its listener must be Running
+          BEFORE a caller sets this — a job requesting a label no runner
+          advertises queues indefinitely rather than failing, so it looks hung
+          rather than broken.
+
+          Personal-account repos (LukeEvansTech/*) can only register runners at
+          repository scope, so each needs its own scale set. Org repos
+          (codelooks-com/*) can share one org-level scale set via a runner
+          group, so the same label works estate-wide there.
+        type: string
+        default: ubuntu-latest
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
       statuses: write
