@@ -42,7 +42,16 @@ jobs:
 >   --jq '.object.sha'
 > ```
 
-> **Why permissions at the job level?** Top-level `contents: read` is read-only by default (least-privilege; satisfies CHECKOV `CKV2_GHA_1`). Per-job permissions add the specific writes super-linter needs (`statuses: write` for per-linter check statuses, `pull-requests: write` for the PR summary comment). Job-level scoping satisfies zizmor's `excessive-permissions` audit — only the lint job gets the writes, no other (hypothetical) job in the same workflow would. Callers must grant equal-or-greater permissions on the lint job, otherwise the runner refuses to start (`startup_failure`).
+<!-- -->
+
+> **Why permissions at the job level?** Top-level `contents: read` is read-only
+> by default (least-privilege; satisfies CHECKOV `CKV2_GHA_1`). Per-job
+> permissions add the specific writes super-linter needs (`statuses: write` for
+> per-linter check statuses, `pull-requests: write` for the PR summary comment).
+> Job-level scoping satisfies zizmor's `excessive-permissions` audit — only the
+> lint job gets the writes, no other (hypothetical) job in the same workflow
+> would. Callers must grant equal-or-greater permissions on the lint job,
+> otherwise the runner refuses to start (`startup_failure`).
 
 ### Inputs
 
@@ -56,7 +65,7 @@ jobs:
 
 ### Examples
 
-**Repo whose default branch is `master`:**
+**Repository whose default branch is `master`:**
 
 ```yaml
 jobs:
@@ -66,7 +75,7 @@ jobs:
       default-branch: master
 ```
 
-**Repo cleaned up — flip to blocking:**
+**Repository cleaned up — flip to blocking:**
 
 ```yaml
 jobs:
@@ -98,7 +107,7 @@ jobs:
 
 ### Per-repo rule overrides
 
-Super-linter natively reads linter configs from the repo being linted. Drop files like `.markdownlint.json`, `.yamllint`, `.shellcheckrc` into `<repo>/.github/linters/`.
+Super-linter natively reads linter configs from the repository being linted. Drop files like `.markdownlint.json`, `.yamllint`, `.shellcheckrc` into `<repo>/.github/linters/`.
 
 ### Versioning
 

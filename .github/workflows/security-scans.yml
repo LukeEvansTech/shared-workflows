@@ -80,14 +80,14 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # Don't leave the GITHUB_TOKEN persisted in .git/config — read-only
           # checkout is enough for SARIF emit. (zizmor: artipacked)
           persist-credentials: false
 
       - name: Run Checkov
-        uses: bridgecrewio/checkov-action@9201a8e6eaa919e3444d7c4ca691896efde4f033 # v12
+        uses: bridgecrewio/checkov-action@9201a8e6eaa919e3444d7c4ca691896efde4f033 # v12.3101.0
         with:
           directory: .
           framework: ${{ inputs.checkov-frameworks }}
@@ -108,7 +108,7 @@ jobs:
       # step itself is the gate on private repos.
       - name: Upload Checkov SARIF (public repos)
         if: ${{ !github.event.repository.private }}
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         with:
           sarif_file: checkov-results.sarif
           category: checkov
@@ -135,14 +135,14 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           # Don't leave the GITHUB_TOKEN persisted in .git/config — read-only
           # checkout is enough for SARIF emit. (zizmor: artipacked)
           persist-credentials: false
 
       - name: Set up Trivy cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/trivy
           key: ${{ runner.os }}-trivy-${{ hashFiles('**/go.sum', '**/package-lock.json', '**/requirements.txt') }}
@@ -188,7 +188,7 @@ jobs:
       # the gate on private repos (where this upload needs GHAS and would fail).
       - name: Upload Trivy SARIF (public repos)
         if: ${{ !github.event.repository.private }}
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         with:
           sarif_file: trivy-results.sarif
           category: trivy
