@@ -192,6 +192,103 @@ jobs:
             echo "staged shared .htmlhintrc -> .github/linters/.htmlhintrc"
           fi
 
+      - name: Stage shared eslint config for super-linter
+        # super-linter lints .json with eslint-plugin-jsonc's strict
+        # "recommended-with-json" ruleset, which forbids comments. But two
+        # families of .json file are JSONC by their own vendor's spec and are
+        # documented to carry comments: .devcontainer/*.json (Dev Containers)
+        # and .vscode/*.json (VS Code settings/tasks/extensions). Across this
+        # estate 17 such files in 11 repos hold comments — every one of them a
+        # jsonc/no-comments error that is wrong, not a defect.
+        #
+        # Stripping the comments to satisfy the linter would delete the
+        # explanatory notes those files exist to carry, so the rule is turned
+        # off for exactly those two path globs. Everything else about JSON
+        # linting is untouched: plain .json still rejects comments, and
+        # .vscode/.devcontainer files are still checked for duplicate keys,
+        # trailing commas and syntax errors.
+        #
+        # The config imports super-linter's own default rather than restating
+        # it, so it cannot drift when the image updates its eslint setup.
+        #
+        # It also disables eslint-plugin-n's module-resolution rules. super-linter
+        # never installs caller dependencies — there is no node_modules in the
+        # container — so n/no-missing-import reports every single third-party
+        # import as unresolvable. On acreage that was 53 findings naming
+        # drizzle-orm, exceljs, cheerio and vitest, all of which are declared in
+        # package.json. The rules cannot work here, and this is exactly the
+        # reasoning super-linter itself uses to disable pylint's import-error
+        # in its own bundled .python-lint.
+        #
+        # Finally it teaches no-unused-vars the underscore convention. Writing
+        # `for await (const _ of gen) {}` to drain a generator, or `_req` for a
+        # handler argument you must accept but do not read, is how JS and TS
+        # code universally marks "deliberately unused". eslint's default
+        # reports every one of them. Only the `^_` prefix is exempted, so a
+        # genuinely forgotten variable is still caught.
+        #
+        # A caller that ships its own .github/linters/eslint.config.mjs keeps
+        # it — this only fills the gap, it never overwrites.
+        shell: bash
+        run: |
+          if [ -f .github/linters/eslint.config.mjs ]; then
+            echo "caller provides eslint.config.mjs — leaving it alone"
+          else
+            mkdir -p .github/linters
+            cat > .github/linters/eslint.config.mjs <<'ESLINTCFG'
+          import defaultConfig from "/action/lib/.automation/eslint.config.mjs";
+          import typescriptEslint from "@typescript-eslint/eslint-plugin";
+
+          export default [
+            ...defaultConfig,
+            {
+              files: [".devcontainer/**/*.json", ".vscode/*.json"],
+              rules: { "jsonc/no-comments": "off" },
+            },
+            {
+              rules: {
+                "n/no-missing-import": "off",
+                "n/no-missing-require": "off",
+                "n/no-extraneous-import": "off",
+                "n/no-extraneous-require": "off",
+                "n/no-unpublished-import": "off",
+                "n/no-unpublished-require": "off",
+                "no-unused-vars": [
+                  "error",
+                  {
+                    argsIgnorePattern: "^_",
+                    varsIgnorePattern: "^_",
+                    caughtErrorsIgnorePattern: "^_",
+                  },
+                ],
+              },
+            },
+            {
+              // The TS variant has to sit in a config object that also declares
+              // the plugin: flat config resolves plugin rules per-object.
+              files: ["**/*.ts", "**/*.cts", "**/*.mts", "**/*.tsx"],
+              plugins: { "@typescript-eslint": typescriptEslint },
+              rules: {
+                // plugin:@typescript-eslint/recommended turns the base rule off
+                // for TS because it cannot read type-signature parameter names
+                // (`(msg: string) => void` in an interface) and reports them as
+                // unused. Re-assert that, since the object above re-enabled it.
+                "no-unused-vars": "off",
+                "@typescript-eslint/no-unused-vars": [
+                  "error",
+                  {
+                    argsIgnorePattern: "^_",
+                    varsIgnorePattern: "^_",
+                    caughtErrorsIgnorePattern: "^_",
+                  },
+                ],
+              },
+            },
+          ];
+          ESLINTCFG
+            echo "staged shared eslint.config.mjs -> .github/linters/"
+          fi
+
       - name: Stage shared pylint config for super-linter
         # super-linter's bundled default .python-lint disables exactly one rule
         # (import-error, because it never installs caller dependencies) and
