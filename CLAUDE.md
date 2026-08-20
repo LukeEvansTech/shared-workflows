@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this repo is
+## What this repository is
 
 Central **reusable GitHub Actions workflows + a "zensical docs standard"** shared across ~18 repos in the `LukeEvansTech` and `codelooks-com` orgs. Nothing here runs on a server — repos consume it two ways:
 
@@ -13,31 +13,50 @@ The golden rule: **fix things in the reusable/template here, never by duplicatin
 
 ## Architecture — the two-layer model
 
-```
+```text
 shared-workflows (this repo, source of truth)
   .github/workflows/super-linter.yml      ← reusable: style/format lint
   .github/workflows/zensical.yml          ← reusable: build/deploy docs site (GitHub Pages)
   .github/workflows/zensical-drift-check.yml ← reusable: enforce the standard on a caller repo
   .github/workflows/security-scans.yml    ← reusable: Checkov + Trivy → SARIF
+  .github/workflows/renovate-review.yml   ← reusable: Claude reviews Renovate PRs
         ▲ SHA-pinned `uses:` (with `# v1` comment)
         │
-caller repo: .github/workflows/{lint,docs,docs-standard-check}.yml  ← thin stubs
+caller repo: .github/workflows/{lint,docs,docs-standard-check,renovate-review}.yml  ← thin stubs
 ```
 
 - Callers **SHA-pin** the reusable with a trailing `# v1` comment (Renovate bumps both SHA and comment when the `v1` tag moves). Tag-pins fail the drift check.
-- **Self-CI:** `lint-self.yml` runs `super-linter.yml` against this repo; `meta-actionlint.yml` actionlints the workflows. Both must stay green.
+- **Self-CI:** `lint-self.yml` runs `super-linter.yml` against this repository; `meta-actionlint.yml` actionlints the workflows. Both must stay green.
 - **Versioning:** callers pin `@v1` (major). Non-breaking changes propagate automatically; breaking changes ship as `@v2` and require explicit caller bumps.
 
 ### super-linter.yml (the most-used reusable)
+
 - Pins the super-linter image by SHA (`super-linter/super-linter@<sha> # v8`). The image tag effectively floats unless SHA-pinned — that determinism is the whole point of this reusable.
-- **v8 polarity rule:** every `VALIDATE_X` env var must be the same polarity (all true *or* all false). That is why `VALIDATE_KUBERNETES_KUBECONFORM` defaults `false` — to keep all the explicit `VALIDATE_*: false` lines consistent. Don't mix.
+- **v8 polarity rule:** every `VALIDATE_X` env var must be the same polarity (all true _or_ all false). That is why `VALIDATE_KUBERNETES_KUBECONFORM` defaults `false` — to keep all the explicit `VALIDATE_*: false` lines consistent. Don't mix.
 - Disables `BIOME`, `JSCPD`, and the security scanners (`CHECKOV`/`TRIVY`/`GITLEAKS` — owned by `security-scans.yml` to avoid double-runs). Kubeconform is opt-in.
 - Reads **per-repo linter configs** from the caller's `.github/linters/` (e.g. `.tflint.hcl`, `.ansible-lint.yml`, `.codespellrc`).
 - **Ansible repos:** if the caller has `ansible/requirements.yml`, a step installs collections with `ansible-galaxy ... -p ansible/collections --force` so ansible-lint's `--syntax-check` can resolve them. `--force` is required because some collections ship preinstalled on the runner and would otherwise be skipped (not copied into the workspace the super-linter container mounts).
 - `filter-regex-exclude` default excludes `collections/` so vendored collection files aren't linted.
 
+### renovate-review.yml (Claude reviews Renovate PRs)
+
+Gates Renovate auto-merge on a `claude/renovate-review` commit status. Extracted 2026-08-21 from four hand-maintained ~700-line copies (talos-cluster, nut-apps, seedbox-apps, truenas-apps) that drifted apart twice in three weeks — 403 org-policy handling, then 429 usage-limit handling — each time leaving repos silently passing Renovate PRs through **unreviewed**.
+
+- Owns the mechanism AND the generic two-thirds of the review prompt. Callers pass `blast-regex` + `forbidden-commands` and keep a `.github/renovate-review-context.md`; everything else is here.
+- **The context file is read from the PR's BASE commit**, not the checked-out head. It is part of the reviewer's instructions, so reading it from the head would let a PR rewrite the rules it is about to be judged by. Consequence: edits to a context file only take effect once merged.
+- **Fail-closed vs fail-open is the whole design.** Dead token (401), org-policy denial (403 `permission_error`), and usage-limit (429, at pre-flight _or_ mid-review via the action's `api_error_status`) all BLOCK. Only genuinely transient errors pass through, so a blip can't wedge auto-merge. Every regression in this workflow's history has been a case that was wrongly on the fail-open path.
+- **`scripts/report-claude-usage.sh`** writes the sticky usage comment and the hidden diff
+  fingerprint that lets the next run skip a redundant (paid) review. It must NOT store a
+  fingerprint for a run that errored — an API-error result still has a result record, and
+  storing its fingerprint makes the next run skip Claude on the strength of a review that never
+  happened. Guarded by the `api_error_status` check at the top.
+- The reusable checks itself out at `job.workflow_sha` to run that script, for the same version-locking reason as the drift check — and does so AFTER the review step so the reviewer never globs `.shared-workflows/`.
+- `anthropics/claude-code-action` is pinned here, so Renovate bumps it once instead of four times.
+
 ### The "zensical docs standard" + drift check
-`scripts/zensical_drift.py` is the enforcement engine (run by `zensical-drift-check.yml`). It checks a target repo for:
+
+`scripts/zensical_drift.py` is the enforcement engine (run by `zensical-drift-check.yml`). It checks a target repository for:
+
 - **pin** — `docs/requirements.txt` is exactly `zensical==X.Y.Z`
 - **palette** — `docs/zensical.toml` has light+dark palette with nested `[project.theme.palette.toggle]`
 - **workflows** — the three required caller workflows exist and are 40-hex SHA-pinned to this repo's reusables
@@ -73,19 +92,27 @@ python3 scripts/sync_markdownlint.py
 
 ## Critical invariants & gotchas
 
-1. **Never run `sync_markdownlint.py` alone.** Each caller's drift check compares against the template **at the SHA that repo is pinned to** — not `main`. Changing `templates/.markdownlint.yml` only drifts a repo once it's re-pinned to a newer SHA. `rollout_zensical_standard.py` is what binds the two together (re-pins the caller SHAs **and** syncs the config in the same pass). Syncing the config without bumping the pins makes the config disagree with the pinned template → drift fails. Editing the template therefore also means updating the matching `tests/fixtures/zensical/*/.markdownlint.yml` fixtures (all but `bad-markdownlint`).
+1. **Never run `sync_markdownlint.py` alone.** Each caller's drift check compares against the
+   template **at the SHA that repository is pinned to** — not `main`. Changing
+   `templates/.markdownlint.yml` only drifts a repository once it's re-pinned to a newer SHA.
+   `rollout_zensical_standard.py` is what binds the two together (re-pins the caller SHAs
+   **and** syncs the config in the same pass). Syncing the config without bumping the pins
+   makes the config disagree with the pinned template → drift fails. Editing the template
+   therefore also means updating the matching `tests/fixtures/zensical/*/.markdownlint.yml`
+   fixtures (all but `bad-markdownlint`).
 
-2. **Repo classification lives in `scripts/audit_zensical_standard.py`** — `REPOS_PUBLISHING` (publish docs) vs `REPOS_BUILD_ONLY` (build-only, rolled out with `--allow-no-pages`). This is the source of truth for which flags each repo's rollout needs. `sync_markdownlint.py` has its own flat repo list.
+2. **Repository classification lives in `scripts/audit_zensical_standard.py`** — `REPOS_PUBLISHING` (publish docs) vs `REPOS_BUILD_ONLY` (build-only, rolled out with `--allow-no-pages`). This is the source of truth for which flags each repo's rollout needs. `sync_markdownlint.py` has its own flat repository list.
 
 3. **`rollout_zensical_standard.py` commits straight to each repo's default branch** (no PRs) via `gh api PUT /contents`. It is idempotent (re-running produces NO-CHANGE) and renders `templates/*` by substituting the `<SHA>` placeholder with the latest `shared-workflows` `main` SHA.
 
 4. **Permissions:** every workflow uses top-level `permissions: contents: read` with job-level write scopes (zizmor `excessive-permissions`, CHECKOV `CKV2_GHA_1`). A caller must grant the lint job ≥ the perms the reusable needs, or the run fails with `startup_failure`.
 
-5. **codespell scans the whole workspace tree** and ignores `FILTER_REGEX_EXCLUDE`. To stop it spell-checking vendored/generated files (e.g. installed ansible collections), add a per-repo `.github/linters/.codespellrc` with `skip = ...` (and `ignore-words-list` for domain false positives).
+5. **codespell scans the whole workspace tree** and ignores `FILTER_REGEX_EXCLUDE`. To stop it spell checking vendored/generated files (e.g. installed Ansible collections), add a per-repo `.github/linters/.codespellrc` with `skip = ...` (and `ignore-words-list` for domain false positives).
 
 6. **All `uses:` must be 40-hex SHA-pinned** with a `# vN` comment — the drift check enforces this on callers, and zizmor/`unpinned-uses` enforces it here.
 
 ## Where to look
+
 - `docs/spec.md` — original design (goal, non-goals, soft-launch-then-graduate rollout philosophy).
 - `README.md` — caller copy/paste snippets and input reference (note: its `filter-regex-exclude` default text predates the `collections` addition).
 - `tests/fixtures/zensical/` — `good` (fully conformant) + one `bad-*` per drift dimension; the harness asserts each `bad-*` fails on its own axis only.

@@ -19,3 +19,6 @@ paths:
   .github/workflows/zensical-drift-check.yml:
     ignore:
       - 'property "workflow_(sha|repository)" is not defined in object type'
+  .github/workflows/renovate-review.yml:
+    ignore:
+      - 'property "workflow_(sha|repository)" is not defined in object type'
