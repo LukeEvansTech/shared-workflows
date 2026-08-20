@@ -2,7 +2,7 @@
 Repo context for the Renovate reviewer (shared-workflows renovate-review reusable).
 
 This file is spliced into the review prompt in place of the generic
-"## Repo Context" section. Everything else in the prompt is generic and lives in
+"## Repository Context" section. Everything else in the prompt is generic and lives in
 the reusable — put ONLY repo-specific facts here.
 
 It is read from the PR's BASE commit, not the PR head, so a pull request cannot

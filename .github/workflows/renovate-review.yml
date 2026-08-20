@@ -23,7 +23,7 @@ on:
           Path, in the CALLING repo, to a markdown file describing the repo for
           the reviewer: what it deploys, how it deploys, which files consume a
           dependency, and which components are high-blast-radius. Spliced into
-          the prompt in place of the generic "## Repo Context" section.
+          the prompt in place of the generic "## Repository Context" section.
 
           Read from the PR's BASE commit, not the PR head — see the "Load repo
           context" step for why.
@@ -598,7 +598,7 @@ jobs:
             ### 3. Assess Impact
 
             Read the files in this repository that reference or consume the upgraded component —
-            the Repo Context section above says where those live and what they look like.
+            the Repository Context section above says where those live and what they look like.
 
             Map each finding from the research step against what this repository actually uses. A
             breaking change that affects a feature or flag we don't set is not actionable. Pay
