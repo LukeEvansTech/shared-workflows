@@ -154,7 +154,7 @@ jobs:
 
 The caller also needs `.github/renovate-review-context.md` describing the repository — see
 [templates/renovate-review-context.md](templates/renovate-review-context.md). It is spliced
-into the prompt in place of the generic `## Repo Context` section, and is read from the PR's
+into the prompt in place of the generic `## Repository Context` section, and is read from the PR's
 **base** commit so a pull request cannot rewrite the rules it is about to be judged by. A
 missing or empty context file fails the review closed.
 
