@@ -1,0 +1,48 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
+# Canonical Renovate-review workflow. Thin caller of the shared-workflows
+# renovate-review reusable, which owns the whole mechanism and the generic
+# two-thirds of the review prompt.
+#
+# Replace <SHA> with the shared-workflows main SHA.
+#
+# Also required in this repo:
+#   .github/renovate-review-context.md   (see templates/renovate-review-context.md)
+#   secret CLAUDE_CODE_OAUTH_TOKEN       (`claude setup-token`, then `gh secret set`)
+name: "Renovate PR Review"
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+concurrency:
+  group: renovate-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Top-level read-only (zizmor excessive-permissions / CKV2_GHA_1).
+permissions:
+  contents: read
+
+jobs:
+  review:
+    # Per-job write scopes: post the review, set the gating commit status.
+    # The reusable needs at least these or the run fails with startup_failure.
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+      id-token: write
+    uses: LukeEvansTech/shared-workflows/.github/workflows/renovate-review.yml@<SHA> # v1
+    with:
+      # Alternation regex of high-blast-radius components, matched
+      # case-insensitively against the Renovate PR title. A match always earns
+      # the deeper "full" review regardless of bump size.
+      blast-regex: "CHANGE-ME|traefik"
+      # Dropped into the prompt as "...do not run any <this>."
+      forbidden-commands: "docker, docker compose, ssh, or deploy commands"
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
