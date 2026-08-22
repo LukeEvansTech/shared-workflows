@@ -20,6 +20,7 @@ shared-workflows (this repo, source of truth)
   .github/workflows/zensical-drift-check.yml ← reusable: enforce the standard on a caller repo
   .github/workflows/security-scans.yml    ← reusable: Checkov + Trivy → SARIF
   .github/workflows/renovate-review.yml   ← reusable: Claude reviews Renovate PRs
+  .github/workflows/release-v1.yml        ← self: force-moves the `v1` tag to main
         ▲ SHA-pinned `uses:` (with `# v1` comment)
         │
 caller repo: .github/workflows/{lint,docs,docs-standard-check,renovate-review}.yml  ← thin stubs
@@ -27,7 +28,7 @@ caller repo: .github/workflows/{lint,docs,docs-standard-check,renovate-review}.y
 
 - Callers **SHA-pin** the reusable with a trailing `# v1` comment (Renovate bumps both SHA and comment when the `v1` tag moves). Tag-pins fail the drift check.
 - **Self-CI:** `lint-self.yml` runs `super-linter.yml` against this repository; `meta-actionlint.yml` actionlints the workflows. Both must stay green.
-- **Versioning:** callers pin `@v1` (major). Non-breaking changes propagate automatically; breaking changes ship as `@v2` and require explicit caller bumps.
+- **Versioning:** callers pin `@v1` (major). Non-breaking changes propagate automatically; breaking changes ship as `@v2` and require explicit caller bumps. `release-v1.yml` moves the tag — never do it by hand (invariant 7).
 
 ### super-linter.yml (the most-used reusable)
 
@@ -110,6 +111,25 @@ python3 scripts/sync_markdownlint.py
 5. **codespell scans the whole workspace tree** and ignores `FILTER_REGEX_EXCLUDE`. To stop it spell checking vendored/generated files (e.g. installed Ansible collections), add a per-repo `.github/linters/.codespellrc` with `skip = ...` (and `ignore-words-list` for domain false positives).
 
 6. **All `uses:` must be 40-hex SHA-pinned** with a `# vN` comment — the drift check enforces this on callers, and zizmor/`unpinned-uses` enforces it here.
+
+7. **`v1` is moved by CI, and only for the consumed surface.** `release-v1.yml`
+   force-moves the annotated tag on any push to `main` touching
+   `.github/workflows/**`, `scripts/**` or `templates/**` — exactly what a pinned
+   caller executes or is compared against (`scripts/` runs from `job.workflow_sha`;
+   `templates/.markdownlint.yml` is compared at the pinned SHA). A documentation
+   commit therefore leaves the tag behind on purpose, and it is still byte-identical
+   to `main` for every caller. **Add a path there if a new reusable starts reading one
+   at `job.workflow_sha`**, or `v1` can go stale in a way that matters again. Stale is
+   not merely unnoticed: Renovate resolves each caller's `# v1` comment and rewrites
+   pins BACKWARDS onto the tag — on 2026-08-20 that re-pinned a caller onto a tree
+   without `renovate-review.yml`, which failed at startup, posted no commit status,
+   and silently blocked every pull request in that repository behind its required
+   check.
+
+8. **Caller pins are stamped from the `v1` tag, not `main` HEAD.**
+   `scripts/lib.sh` always resolved the tag; `rollout_zensical_standard.py` used to
+   stamp `main` while writing a `# v1` comment beside it, which is how a caller came
+   to be pinned ahead of the tag in the first place. Both now resolve `v1`.
 
 ## Where to look
 

@@ -191,6 +191,47 @@ once the window resets.
 - Breaking changes ship as `@v2` and require explicit caller bumps.
 - The internal `anthropics/claude-code-action` pin is bumped via Renovate here — one PR per release, no churn in caller repos.
 
+## The `v1` tag
+
+Callers pin a reusable by commit SHA with a trailing `# v1` comment, and Renovate resolves
+that comment against the real `v1` tag. The tag is not decoration — it is what Renovate
+rewrites caller pins to.
+
+[`.github/workflows/release-v1.yml`](.github/workflows/release-v1.yml) force-moves the
+annotated `v1` tag to the new `main` HEAD on every push that touches
+`.github/workflows/**`, `scripts/**` or `templates/**` — the paths a pinned caller
+executes or is compared against. Documentation, tests and repository configuration
+deliberately do not move it: a tag move offers a Renovate bump to every calling
+repository, and a `README.md` edit changes nothing any of them run.
+
+Before moving the tag the job refuses two things:
+
+- moving `v1` onto a commit that is not a descendant of where it already points; and
+- shipping a `main` that has deleted a reusable workflow, or one of its `workflow_call`
+  inputs or secrets, that exists at the current `v1`.
+
+Both break callers at startup, so they belong in `v2`. The check is structural — a
+renamed input, a changed default, or a behaviour change inside a job is still a pull
+request review question.
+
+Run it by hand from the Actions tab (`workflow_dispatch`) after a documentation-only
+merge, or to recover if the tag is ever left behind.
+
+### Why it exists
+
+`v1` used to be moved by hand. On 2026-08-20 `renovate-review.yml` landed on `main` two
+commits past the tag, and the tag was not moved. A caller pinned ahead of it was
+"corrected" backwards by Renovate onto a tree where that file did not exist; the workflow
+failed at startup with zero jobs and posted no commit status. That status was a required
+check, so every pull request in that repository silently stopped being mergeable.
+
+### Why there is no `v1.x.y`
+
+Nobody would pin one. Callers pin a commit SHA and Renovate tracks the major tag, so a
+patch/minor series across five independently-evolving reusables would be a numbering
+decision with no consumer to serve. The annotated tag message records the previous SHA and
+the commits it moved over, so `git show v1` is the changelog.
+
 ## Design
 
 See [docs/spec.md](docs/spec.md).

@@ -1,0 +1,207 @@
+---
+name: Release — move v1
+
+# Callers pin these reusables by commit SHA with a trailing `# v1` comment, and
+# Renovate resolves that comment against the real `v1` tag. A tag that lags
+# `main` therefore does not merely go unnoticed — Renovate actively rewrites
+# callers BACKWARDS onto it.
+#
+# 2026-08-20: `renovate-review.yml` landed on `main` two commits past `v1`. A
+# caller pinned to `main` was "corrected" back to the tag, where that file did
+# not exist. The run died at startup with zero jobs and posted no commit status;
+# because that status was required, every pull request in that repository
+# silently stopped being mergeable.
+#
+# This job closes the window: when the surface callers actually execute changes
+# on `main`, `v1` moves with it in the same push.
+
+on:
+  push:
+    branches: [main]
+    # Only the paths a pinned caller can execute or be compared against:
+    #   .github/workflows/**  the reusables themselves
+    #   scripts/**            zensical-drift-check.yml and renovate-review.yml
+    #                         check this repository out at `job.workflow_sha`
+    #                         and run scripts/ from the pinned commit
+    #   templates/**          zensical_drift.py compares a caller's
+    #                         .markdownlint.yml byte-for-byte against
+    #                         templates/.markdownlint.yml at the pinned commit
+    #
+    # Documentation, tests and repository config are deliberately excluded:
+    # moving the tag offers a Renovate bump to every caller repository, and a
+    # README edit does not change a byte any of them run. Add a path here if a
+    # new reusable starts reading one at `job.workflow_sha`.
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "templates/**"
+  workflow_dispatch:
+
+# Top-level: read-only by default.
+permissions:
+  contents: read
+
+# Serialise tag moves. Two pushes in quick succession must not race to force the
+# same ref; the later one has to win, so nothing is cancelled.
+concurrency:
+  group: release-v1
+  cancel-in-progress: false
+
+jobs:
+  retag:
+    name: Move v1
+    runs-on: ubuntu-latest
+    permissions:
+      # The only write scope in this repository's own CI: this job pushes a tag.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Full history and tags — the guard below diffs the current v1
+          # against the commit about to be tagged.
+          fetch-depth: 0
+          # The one checkout in this repository that keeps its credentials: it
+          # is the one that pushes. Everywhere else this is false (zizmor
+          # `artipacked`).
+          persist-credentials: true
+
+      - name: Resolve tag state
+        id: state
+        env:
+          TAG: v1
+          NEW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # workflow_dispatch runs on whatever ref was selected. v1 tracks main.
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::v1 tracks main; this run is on ${GITHUB_REF}."
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null; then
+            old="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          else
+            old=""
+          fi
+
+          if [ "$old" = "$NEW_SHA" ]; then
+            changed=false
+          else
+            changed=true
+          fi
+
+          {
+            echo "old-sha=${old}"
+            echo "new-sha=${NEW_SHA}"
+            echo "changed=${changed}"
+          } >>"$GITHUB_OUTPUT"
+
+          echo "current ${TAG}: ${old:-<absent>}"
+          echo "target:        ${NEW_SHA}"
+          echo "needs move:    ${changed}"
+
+      # Two ways a tag move can break callers, neither visible to the push
+      # event: moving `v1` backwards onto a commit it has already passed (what
+      # a caller experienced on 2026-08-20), and dropping a reusable workflow —
+      # or one of its `workflow_call` inputs/secrets — that callers already
+      # reference. Both fail the run rather than shipping.
+      #
+      # This is a structural check, not a semantic one. A renamed input, a
+      # changed default or a behaviour change inside a job still has to be
+      # caught at pull request review; that is what the `@v2` escape hatch is
+      # for.
+      - name: Guard the move
+        if: steps.state.outputs.changed == 'true' && steps.state.outputs.old-sha != ''
+        env:
+          OLD_SHA: ${{ steps.state.outputs.old-sha }}
+          NEW_SHA: ${{ steps.state.outputs.new-sha }}
+        run: |
+          set -euo pipefail
+
+          if ! git merge-base --is-ancestor "$OLD_SHA" "$NEW_SHA"; then
+            echo "::error::Refusing to move v1: ${OLD_SHA} is not an ancestor of ${NEW_SHA}." \
+                 "Moving the tag backwards is exactly what broke callers on 2026-08-20."
+            exit 1
+          fi
+
+          # Input and secret names are the only keys at exactly six spaces
+          # inside a reusable's `on:` block — descriptions and defaults sit
+          # deeper, job keys start after `jobs:`.
+          api() {
+            git show "$1:$2" \
+              | awk '/^on:/ { inside = 1; next } /^jobs:/ { exit } inside' \
+              | sed -n 's/^      \([A-Za-z0-9_-]\{1,\}\):.*/\1/p' \
+              | sort -u
+          }
+
+          broken=0
+          while IFS= read -r file; do
+            grep -q '^  workflow_call:' <<<"$(git show "$OLD_SHA:$file")" || continue
+
+            if ! git cat-file -e "$NEW_SHA:$file" 2>/dev/null; then
+              echo "::error::${file} is a reusable at v1 (${OLD_SHA}) and is gone at ${NEW_SHA}." \
+                   "Every caller pinned to it would fail at startup. Ship the removal as v2."
+              broken=1
+              continue
+            fi
+
+            removed="$(comm -23 <(api "$OLD_SHA" "$file") <(api "$NEW_SHA" "$file") | tr '\n' ' ')"
+            if [ -n "${removed// /}" ]; then
+              echo "::error::${file} drops workflow_call input(s)/secret(s) present at v1:" \
+                   "${removed}. Callers still passing them would fail at startup. Ship it as v2."
+              broken=1
+            fi
+          done < <(git ls-tree -r --name-only "$OLD_SHA" -- .github/workflows)
+
+          if [ "$broken" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "No reusable workflow removed and no workflow_call input/secret dropped."
+
+      - name: Move v1
+        if: steps.state.outputs.changed == 'true'
+        env:
+          TAG: v1
+          OLD_SHA: ${{ steps.state.outputs.old-sha }}
+          NEW_SHA: ${{ steps.state.outputs.new-sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          message="$RUNNER_TEMP/${TAG}-tag-message.txt"
+          {
+            echo "${TAG}: reusable workflows at ${NEW_SHA}"
+            echo
+            if [ -n "$OLD_SHA" ]; then
+              echo "Moved from ${OLD_SHA} by ${RUN_URL}"
+              echo
+              git log --no-merges --format='  %h %s' -n 20 "${OLD_SHA}..${NEW_SHA}"
+            else
+              echo "Created at ${NEW_SHA} by ${RUN_URL}"
+            fi
+          } >"$message"
+
+          git tag -f -a "$TAG" -F "$message" "$NEW_SHA"
+          git push --force origin "refs/tags/${TAG}"
+
+      - name: Summary
+        env:
+          TAG: v1
+          OLD_SHA: ${{ steps.state.outputs.old-sha }}
+          NEW_SHA: ${{ steps.state.outputs.new-sha }}
+          CHANGED: ${{ steps.state.outputs.changed }}
+        run: |
+          set -euo pipefail
+          {
+            if [ "$CHANGED" = "true" ]; then
+              echo "\`${TAG}\` → \`${NEW_SHA}\` (was \`${OLD_SHA:-absent}\`)"
+            else
+              echo "\`${TAG}\` already at \`${NEW_SHA}\` — no move needed."
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
