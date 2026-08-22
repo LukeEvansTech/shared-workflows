@@ -3,15 +3,23 @@ name: Meta — actionlint
 on:
   pull_request:
     paths:
-      - '.github/workflows/**'
+      - ".github/workflows/**"
   push:
     branches: [main]
     paths:
-      - '.github/workflows/**'
+      - ".github/workflows/**"
+
+# Top-level: read-only by default. The job only reads the tree and emits
+# annotations, so it needs no job-level override.
+permissions:
+  contents: read
 
 jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: raven-actions/actionlint@v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Lint-only checkout, nothing is pushed back (zizmor `artipacked`).
+          persist-credentials: false
+      - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
