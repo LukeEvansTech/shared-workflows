@@ -59,11 +59,24 @@ def gh(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess
     )
 
 
-def get_latest_sha() -> str:
-    """Get the latest SHA on shared-workflows main."""
-    r = gh(["api", f"repos/{SHARED_WORKFLOWS_REPO}/commits/main"])
+def get_v1_sha() -> str:
+    """Get the commit SHA that the shared-workflows `v1` tag points at.
+
+    Not `main`. The pins this script writes carry a trailing `# v1`
+    comment, and Renovate resolves that comment against the real tag. A
+    main SHA therefore hands callers a pin that Renovate later rewrites
+    BACKWARDS to wherever `v1` sits -- which on 2026-08-20 was a tree
+    without renovate-review.yml in it, so the caller's workflow died at
+    startup and posted no commit status. scripts/lib.sh has always
+    resolved the tag; this is the same rule for the zensical rollout.
+
+    .github/workflows/release-v1.yml keeps `v1` level with `main`, so in
+    practice the two agree -- this makes the pin correct by construction
+    rather than by timing.
+    """
+    r = gh(["api", f"repos/{SHARED_WORKFLOWS_REPO}/commits/v1"])
     if r.returncode != 0:
-        raise SystemExit(f"could not fetch shared-workflows SHA: {r.stderr}")
+        raise SystemExit(f"could not fetch shared-workflows v1 SHA: {r.stderr}")
     return json.loads(r.stdout)["sha"]
 
 
@@ -159,8 +172,8 @@ SUPERSEDED_LINT_WORKFLOWS = [
 
 
 def apply(repo: str, publish: bool, allow_no_pages: bool, dry_run: bool) -> None:
-    sha = get_latest_sha()
-    print(f"shared-workflows SHA: {sha}")
+    sha = get_v1_sha()
+    print(f"shared-workflows v1 SHA: {sha}")
     print(
         f"Applying standard to {repo} (publish={publish}, allow_no_pages={allow_no_pages})"
     )

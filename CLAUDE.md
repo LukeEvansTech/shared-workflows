@@ -126,6 +126,11 @@ python3 scripts/sync_markdownlint.py
    and silently blocked every pull request in that repository behind its required
    check.
 
+8. **Caller pins are stamped from the `v1` tag, not `main` HEAD.**
+   `scripts/lib.sh` always resolved the tag; `rollout_zensical_standard.py` used to
+   stamp `main` while writing a `# v1` comment beside it, which is how a caller came
+   to be pinned ahead of the tag in the first place. Both now resolve `v1`.
+
 ## Where to look
 
 - `docs/spec.md` — original design (goal, non-goals, soft-launch-then-graduate rollout philosophy).
