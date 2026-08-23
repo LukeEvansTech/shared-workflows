@@ -383,7 +383,7 @@ jobs:
           # sk-ant-oat01 OAuth tokens authenticate via `Authorization: Bearer`
           # (NOT x-api-key — that returns 401 "invalid x-api-key" even for a valid
           # OAuth token) and require the oauth-2025-04-20 beta header.
-          code=$(curl -sS -o /tmp/tokresp.json -w '%{http_code}' \
+          code=$(curl -sS -o /tmp/tokresp.json -D /tmp/tokhdr.txt -w '%{http_code}' \
             --max-time 30 \
             -X POST https://api.anthropic.com/v1/messages \
             -H "Authorization: Bearer ${CLAUDE_CODE_OAUTH_TOKEN}" \
@@ -439,9 +439,36 @@ jobs:
             fi
           elif [[ "$state" == "rate-limited" ]]; then
             reason="usage-limit"
-            # The API message carries the reset time ("... resets 3:40am (UTC)"),
-            # which is the one thing the operator needs to know.
-            detail=$(jq -r '.error.message // ""' /tmp/tokresp.json 2>/dev/null | head -c 100 || true)
+            # The reset time is the one thing the operator needs, and it is NOT
+            # reliably in the body: on 2026-08-23 every 429 annotation rendered
+            # "rate_limit_error: Error" because .error.message was literally
+            # "Error". The rate-limit HEADERS carry the real answer, so prefer
+            # those and keep the body only as a fallback.
+            reset=$(grep -iE '^(anthropic-ratelimit-unified-reset|anthropic-ratelimit-requests-reset|retry-after):' \
+              /tmp/tokhdr.txt 2>/dev/null | head -1 | cut -d: -f2- | tr -d '\r' | xargs || true)
+            msg=$(jq -r '(.error.message // .message // empty)' /tmp/tokresp.json 2>/dev/null | head -c 80 || true)
+            if [[ -n "$reset" ]]; then
+              # retry-after is seconds; the *-reset headers are unix seconds or
+              # an RFC3339 stamp. Render whichever we got as something readable.
+              if [[ "$reset" =~ ^[0-9]+$ ]]; then
+                if (( reset > 1000000000 )); then
+                  detail="resets $(date -u -d "@$reset" '+%H:%M UTC' 2>/dev/null || echo "at epoch $reset")"
+                else
+                  detail="retry in $(( (reset + 59) / 60 ))m"
+                fi
+              else
+                detail="resets $reset"
+              fi
+              [[ -n "$msg" && "$msg" != "Error" ]] && detail="$detail ($msg)"
+            else
+              detail="$msg"
+            fi
+            detail=$(printf '%s' "$detail" | head -c 100)
+            # Log what we actually got, so a future shape change is diagnosable
+            # from the run rather than needing another round of archaeology.
+            echo "429 rate-limit headers:"
+            grep -iE '^(anthropic-ratelimit|retry-after)' /tmp/tokhdr.txt 2>/dev/null | sed 's/^/  /' || echo "  (none present)"
+            echo "429 body (first 200 chars): $(head -c 200 /tmp/tokresp.json 2>/dev/null | tr -d '\n')"
           fi
           {
             echo "token_state=$state"
