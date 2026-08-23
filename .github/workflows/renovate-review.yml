@@ -438,37 +438,49 @@ jobs:
               reason="expired-or-revoked"
             fi
           elif [[ "$state" == "rate-limited" ]]; then
-            reason="usage-limit"
-            # The reset time is the one thing the operator needs, and it is NOT
-            # reliably in the body: on 2026-08-23 every 429 annotation rendered
-            # "rate_limit_error: Error" because .error.message was literally
-            # "Error". The rate-limit HEADERS carry the real answer, so prefer
-            # those and keep the body only as a fallback.
-            reset=$(grep -iE '^(anthropic-ratelimit-unified-reset|anthropic-ratelimit-requests-reset|retry-after):' \
-              /tmp/tokhdr.txt 2>/dev/null | head -1 | cut -d: -f2- | tr -d '\r' | xargs || true)
-            msg=$(jq -r '(.error.message // .message // empty)' /tmp/tokresp.json 2>/dev/null | head -c 80 || true)
-            if [[ -n "$reset" ]]; then
-              # retry-after is seconds; the *-reset headers are unix seconds or
-              # an RFC3339 stamp. Render whichever we got as something readable.
-              if [[ "$reset" =~ ^[0-9]+$ ]]; then
-                if (( reset > 1000000000 )); then
-                  detail="resets $(date -u -d "@$reset" '+%H:%M UTC' 2>/dev/null || echo "at epoch $reset")"
-                else
-                  detail="retry in $(( (reset + 59) / 60 ))m"
-                fi
-              else
-                detail="resets $reset"
-              fi
-              [[ -n "$msg" && "$msg" != "Error" ]] && detail="$detail ($msg)"
+            # Two very different failures share type=rate_limit_error, and they
+            # need opposite advice — so tell them apart before writing any.
+            #
+            #   * A real rate limit carries `retry-after` (seconds) and/or the
+            #     anthropic-ratelimit-*-reset headers (RFC 3339). A re-run once
+            #     it reopens is the fix.
+            #   * Hitting the ORG SPEND CAP returns the same error type with NO
+            #     retry-after, and access does not resume until 00:00 UTC on the
+            #     1st of the next month. `error.details.error_code` is
+            #     `enforced_spend_limit_reached`. Re-running is useless here, so
+            #     saying "re-run once the window resets" is actively misleading.
+            #
+            # Header names are the documented ones (platform.claude.com/docs/en/
+            # api/rate-limits, "Response headers"); .error.message is NOT a
+            # reliable source — on 2026-08-23 it was literally "Error".
+            err_code=$(jq -r '.error.details.error_code // ""' /tmp/tokresp.json 2>/dev/null || echo "")
+            msg=$(jq -r '(.error.message // .message // empty)' /tmp/tokresp.json 2>/dev/null | head -c 120 || true)
+            if [[ "$err_code" == "enforced_spend_limit_reached" ]]; then
+              reason="spend-cap"
+              detail="${msg:-organization monthly spend cap reached}"
             else
-              detail="$msg"
+              reason="usage-limit"
+              retry=$(grep -iE '^retry-after:' /tmp/tokhdr.txt 2>/dev/null | head -1 | cut -d: -f2- | tr -d '\r' | xargs || true)
+              reset=$(grep -iE '^anthropic-ratelimit-(requests|tokens|input-tokens|output-tokens)-reset:' \
+                /tmp/tokhdr.txt 2>/dev/null | head -1 | cut -d: -f2- | tr -d '\r' | xargs || true)
+              if [[ "$retry" =~ ^[0-9]+$ ]]; then
+                detail="retry in $(( (retry + 59) / 60 ))m"
+              elif [[ -n "$reset" ]]; then
+                detail="resets $reset"
+              else
+                # Neither header present: not a per-minute limit. Most likely a
+                # subscription/Claude-Code usage window, which reopens on its own
+                # schedule and tells us nothing here.
+                detail="${msg:-no reset time returned}"
+              fi
             fi
             detail=$(printf '%s' "$detail" | head -c 100)
-            # Log what we actually got, so a future shape change is diagnosable
-            # from the run rather than needing another round of archaeology.
+            # Log what actually came back, so the next shape change is
+            # diagnosable from the run instead of by archaeology.
+            echo "429 err_code=${err_code:-none} reason=$reason"
             echo "429 rate-limit headers:"
-            grep -iE '^(anthropic-ratelimit|retry-after)' /tmp/tokhdr.txt 2>/dev/null | sed 's/^/  /' || echo "  (none present)"
-            echo "429 body (first 200 chars): $(head -c 200 /tmp/tokresp.json 2>/dev/null | tr -d '\n')"
+            grep -iE '^(anthropic-ratelimit|anthropic-priority|retry-after)' /tmp/tokhdr.txt 2>/dev/null | sed 's/^/  /' || echo "  (none present)"
+            echo "429 body (first 300 chars): $(head -c 300 /tmp/tokresp.json 2>/dev/null | tr -d '\n')"
           fi
           {
             echo "token_state=$state"
@@ -736,10 +748,14 @@ jobs:
               desc="OAuth token invalid/expired/revoked - rotate CLAUDE_CODE_OAUTH_TOKEN (review skipped)"
             fi
           elif [[ "$TOKEN_STATE" == "rate-limited" ]]; then
-            # Usage window spent before the review started: nothing ran, so there
-            # is no verdict to read. Fail closed; a re-run after the reset clears it.
+            # Nothing ran, so there is no verdict to read. Fail closed either way,
+            # but a spend-cap 429 is not fixed by a re-run — say which it is.
             state="failure"
-            desc="Claude usage limit hit (429) - re-run once the window resets${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
+            if [[ "$TOKEN_REASON" == "spend-cap" ]]; then
+              desc="Claude spend cap reached - raise the limit or wait for next month${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
+            else
+              desc="Claude usage limit hit (429) - re-run once the window resets${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
+            fi
           else
             # Gated version bump - read the latest verdict. Works for fresh runs
             # AND fingerprint-skips (the prior review is still on the PR).
@@ -880,6 +896,11 @@ jobs:
         if: steps.token_check.outputs.token_state == 'rate-limited'
         env:
           TOKEN_DETAIL: ${{ steps.token_check.outputs.token_detail }}
+          TOKEN_REASON: ${{ steps.token_check.outputs.token_reason }}
         run: |-
-          echo "::error title=Claude usage limit hit::CLAUDE_CODE_OAUTH_TOKEN is valid, but the Claude subscription behind it has spent its usage window (HTTP 429 rate_limit_error${TOKEN_DETAIL:+: $TOKEN_DETAIL}). The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed. Re-run this workflow once the window resets - do NOT rotate the token. If this recurs, CI reviews are competing with interactive Claude Code sessions on the same subscription: enable extra usage or move the workflow to an API key."
+          if [[ "$TOKEN_REASON" == "spend-cap" ]]; then
+            echo "::error title=Claude spend cap reached::CLAUDE_CODE_OAUTH_TOKEN is valid, but the organization behind it has hit its monthly API SPEND CAP (HTTP 429 rate_limit_error / enforced_spend_limit_reached${TOKEN_DETAIL:+: $TOKEN_DETAIL}). Re-running will NOT help and neither will rotating the token - access does not resume until 00:00 UTC on the 1st of next month, or until the spend limit is raised at platform.claude.com/settings/billing. The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed."
+          else
+            echo "::error title=Claude usage limit hit::CLAUDE_CODE_OAUTH_TOKEN is valid, but the Claude subscription behind it has spent its usage window (HTTP 429 rate_limit_error${TOKEN_DETAIL:+: $TOKEN_DETAIL}). The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed. Re-run this workflow once the window resets - do NOT rotate the token. If this recurs, CI reviews are competing with interactive Claude Code sessions on the same subscription: enable extra usage or move the workflow to an API key."
+          fi
           exit 1
