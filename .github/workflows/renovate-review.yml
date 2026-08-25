@@ -279,8 +279,14 @@ jobs:
           # Stored fingerprint lives in a hidden marker inside the sticky usage
           # comment, written by report-claude-usage.sh only when a real review ran.
           # grep exits 1 on no match (first run) -> guard with || true.
-          stored=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-            --jq "[.[] | select(.user.login==\"github-actions[bot]\" and (.body|contains(\"$USAGE_MARKER\")))] | last | .body // \"\"" \
+          # --slurp is required: --paginate alone runs --jq once PER PAGE, so
+          # `last` would only ever see the last matching comment on whichever
+          # page happened to be fetched, not the true latest across the whole
+          # PR, once comments exceed one page (default 30 per page). --slurp
+          # wraps all pages into an outer array; `add[]` flattens that back
+          # into a single stream of comments before filtering.
+          stored=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
+            --jq "[add[] | select(.user.login==\"github-actions[bot]\" and (.body|contains(\"$USAGE_MARKER\")))] | last | .body // \"\"" \
             2>/dev/null | grep -oE 'fingerprint:[0-9a-f]{64}' | head -1 | cut -d: -f2 || true)
 
           # A prior verdict must exist for the skip to be safe — the status step
@@ -305,8 +311,11 @@ jobs:
           # Parsing is scoped to the verdict LINE and tests "Changes required"
           # before "Safe to merge", so it fails closed: a dismissed change-request
           # still blocks, an unparsable body yields "" and is not reused.
-          prior=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-            --jq '[.[] | select(.user.login=="claude[bot]" or .user.login=="github-actions[bot]")
+          # --slurp: same page-local-vs-global "last" bug as the comments
+          # fetch above — see the comment there. Flatten with add[] before
+          # selecting.
+          prior=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp \
+            --jq '[add[] | select(.user.login=="claude[bot]" or .user.login=="github-actions[bot]")
                   | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
                   | last
                   | if . == null then ""
@@ -765,8 +774,10 @@ jobs:
             # of a review that dismiss_stale_reviews_on_push wiped.
             resolved=""
             for attempt in 1 2 3; do
-              resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-                --jq '[.[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
+              # --slurp: same page-local-vs-global "last" bug as the
+              # fingerprint gate's resolver above — see that comment.
+              resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp \
+                --jq '[add[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
                       | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
                       | last
                       | if . == null then ""
