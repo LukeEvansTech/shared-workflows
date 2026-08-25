@@ -785,12 +785,33 @@ jobs:
             [[ "$verdict_origin" == "$resolved" ]] && verdict_origin="live"
             echo "Resolved verdict: state='$review_state' origin='$verdict_origin'"
 
+            # THIS run's mid-review 429, if any. The action's result record
+            # carries api_error_status=429 when the usage window ran out
+            # partway through the run (pre-flight passed, a later turn
+            # didn't). Computed up front because a review_state recovered
+            # from a DISMISSED review's body belongs to a PRIOR run and must
+            # not be trusted over what happened in THIS one - see below.
+            limit_msg=""
+            if [[ -n "${EXEC_FILE:-}" && -f "$EXEC_FILE" ]]; then
+              limit_msg=$(jq -r 'map(select(.type=="result")) | last | select(.api_error_status == 429) | .result // "429"' \
+                "$EXEC_FILE" 2>/dev/null | head -c 100 || true)
+            fi
+
             if [[ "$review_state" == "APPROVED" ]]; then
-              state="success"
-              if [[ "$verdict_origin" == "dismissed" ]]; then
-                desc="Claude approved - no breaking changes (verdict recovered from dismissed review)"
+              if [[ "$verdict_origin" == "dismissed" && -n "$limit_msg" ]]; then
+                # Recovered verdict predates this run and says nothing about
+                # it - a mid-review 429 THIS run hit must not be masked by a
+                # stale prior approval. Fail closed, same as the no-verdict
+                # 429 case below.
+                state="failure"
+                desc="Claude usage limit hit mid-review (429) - re-run once the window resets: ${limit_msg}"
               else
-                desc="Claude approved - no breaking changes found"
+                state="success"
+                if [[ "$verdict_origin" == "dismissed" ]]; then
+                  desc="Claude approved - no breaking changes (verdict recovered from dismissed review)"
+                else
+                  desc="Claude approved - no breaking changes found"
+                fi
               fi
             elif [[ "$review_state" == "CHANGES_REQUESTED" ]]; then
               state="failure"
@@ -806,19 +827,12 @@ jobs:
               state="failure"
               desc="Claude finished without posting a verdict - review manually"
             else
-              # Claude step errored/cancelled with no verdict posted. The usage
-              # window can also run out MID-review (the pre-flight passed, a later
-              # turn got 429): the action's result record then carries
-              # api_error_status=429 and the reset time. That is the same hours-long
-              # outage as the pre-flight case, so fail closed on it. Anything else
-              # (API blip, timeout) is a genuine transient failure != changes-
-              # requested: pass through so the auto-merge pipeline isn't wedged.
-              # Surfaced in the status for audit either way.
-              limit_msg=""
-              if [[ -n "${EXEC_FILE:-}" && -f "$EXEC_FILE" ]]; then
-                limit_msg=$(jq -r 'map(select(.type=="result")) | last | select(.api_error_status == 429) | .result // "429"' \
-                  "$EXEC_FILE" 2>/dev/null | head -c 100 || true)
-              fi
+              # Claude step errored/cancelled with no verdict posted. That is
+              # the same hours-long outage as the pre-flight case when it's a
+              # 429, so fail closed on it (limit_msg computed above). Anything
+              # else (API blip, timeout) is a genuine transient failure !=
+              # changes-requested: pass through so the auto-merge pipeline
+              # isn't wedged. Surfaced in the status for audit either way.
               if [[ -n "$limit_msg" ]]; then
                 state="failure"
                 desc="Claude usage limit hit mid-review (429) - re-run once the window resets: ${limit_msg}"
