@@ -136,6 +136,30 @@ jobs:
               | sort -u
           }
 
+          # Per-name `required`/`default` status, for the same six-space keys
+          # api() lists: `required: true` and `default:` both sit nested one
+          # level deeper (eight spaces). Emits "<name> <required> <has-default>"
+          # per line so a newly added required input with no default can be
+          # told apart from an optional one.
+          meta() {
+            git show "$1:$2" \
+              | awk '
+                  /^on:/ { inside = 1; next }
+                  /^jobs:/ { exit }
+                  inside && /^      [A-Za-z0-9_-]+:/ {
+                    if (name != "") print name, req, def
+                    name = $0
+                    sub(/^      /, "", name)
+                    sub(/:.*/, "", name)
+                    req = "false"; def = "false"
+                    next
+                  }
+                  inside && /^        required:[ \t]*true[ \t]*$/ { req = "true"; next }
+                  inside && /^        default:/ { def = "true"; next }
+                  END { if (name != "") print name, req, def }
+                '
+          }
+
           broken=0
           while IFS= read -r file; do
             grep -q '^  workflow_call:' <<<"$(git show "$OLD_SHA:$file")" || continue
@@ -153,13 +177,31 @@ jobs:
                    "${removed}. Callers still passing them would fail at startup. Ship it as v2."
               broken=1
             fi
+
+            added="$(comm -13 <(api "$OLD_SHA" "$file") <(api "$NEW_SHA" "$file") | tr '\n' ' ')"
+            if [ -n "${added// /}" ]; then
+              while read -r name req def; do
+                [ -z "$name" ] && continue
+                case " $added " in
+                  *" $name "*) ;;
+                  *) continue ;;
+                esac
+                if [ "$req" = "true" ] && [ "$def" = "false" ]; then
+                  echo "::error::${file} adds workflow_call input/secret '${name}' as" \
+                       "required with no default at ${NEW_SHA}. Existing callers still" \
+                       "pinned to v1 don't pass it and would fail at startup. Ship it as v2."
+                  broken=1
+                fi
+              done < <(meta "$NEW_SHA" "$file")
+            fi
           done < <(git ls-tree -r --name-only "$OLD_SHA" -- .github/workflows)
 
           if [ "$broken" -ne 0 ]; then
             exit 1
           fi
 
-          echo "No reusable workflow removed and no workflow_call input/secret dropped."
+          echo "No reusable workflow removed, no workflow_call input/secret dropped," \
+               "and no newly required input/secret added without a default."
 
       - name: Move v1
         if: steps.state.outputs.changed == 'true'
