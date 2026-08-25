@@ -805,15 +805,29 @@ jobs:
               # This is an anomaly worth a human look, not a transient blip - fail.
               state="failure"
               desc="Claude finished without posting a verdict - review manually"
+            elif [[ "$CLAUDE_OUTCOME" == "skipped" ]]; then
+              # The Claude step's own `if:` already rules out the two legitimate
+              # skip reasons above (fingerprint SKIP, TOKEN_STATE invalid/rate-
+              # limited) and GATED is 'true' here - so a skip at this point can
+              # only mean a prerequisite step upstream (blast list, model tier,
+              # fingerprint check, repo context, token validation) failed and
+              # GitHub Actions' implicit success() gating skipped everything
+              # after it, Claude included. Claude never got a chance to run, so
+              # there is no verdict to pass through - fail closed like every
+              # other "Claude didn't review this" case, per the fail-closed
+              # design this workflow exists to enforce (see CLAUDE.md).
+              state="failure"
+              desc="A prerequisite step failed before Claude could run - check the workflow run, review manually"
             else
-              # Claude step errored/cancelled with no verdict posted. The usage
-              # window can also run out MID-review (the pre-flight passed, a later
-              # turn got 429): the action's result record then carries
-              # api_error_status=429 and the reset time. That is the same hours-long
-              # outage as the pre-flight case, so fail closed on it. Anything else
-              # (API blip, timeout) is a genuine transient failure != changes-
-              # requested: pass through so the auto-merge pipeline isn't wedged.
-              # Surfaced in the status for audit either way.
+              # Claude step actually started and then errored/was cancelled with
+              # no verdict posted. The usage window can also run out MID-review
+              # (the pre-flight passed, a later turn got 429): the action's
+              # result record then carries api_error_status=429 and the reset
+              # time. That is the same hours-long outage as the pre-flight case,
+              # so fail closed on it. Anything else (API blip, timeout) is a
+              # genuine transient failure != changes-requested: pass through so
+              # the auto-merge pipeline isn't wedged. Surfaced in the status for
+              # audit either way.
               limit_msg=""
               if [[ -n "${EXEC_FILE:-}" && -f "$EXEC_FILE" ]]; then
                 limit_msg=$(jq -r 'map(select(.type=="result")) | last | select(.api_error_status == 429) | .result // "429"' \
