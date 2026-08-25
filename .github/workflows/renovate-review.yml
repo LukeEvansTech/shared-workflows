@@ -763,27 +763,45 @@ jobs:
             # long comment there for why. Emits "<STATE>" for a live review or
             # "<STATE>:dismissed" when the verdict had to be recovered from the body
             # of a review that dismiss_stale_reviews_on_push wiped.
-            resolved=""
-            for attempt in 1 2 3; do
-              resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-                --jq '[.[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
-                      | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
-                      | last
-                      | if . == null then ""
-                        elif .state != "DISMISSED" then .state
-                        else ((((.body // "") | capture("Verdict\\*\\*:[ \t]*(?<v>[^\n]*)")? | .v) // "")
-                          | if test("Changes required") then "CHANGES_REQUESTED:dismissed"
-                            elif test("Safe to merge") then "APPROVED:dismissed"
-                            else "" end)
-                        end' 2>/dev/null || echo "")
-              [[ -n "$resolved" ]] && break
-              echo "Attempt $attempt: resolved='' - retrying in 5s..."
-              sleep 5
-            done
-            review_state="${resolved%%:*}"
-            verdict_origin="${resolved#*:}"
-            [[ "$verdict_origin" == "$resolved" ]] && verdict_origin="live"
-            echo "Resolved verdict: state='$review_state' origin='$verdict_origin'"
+            #
+            # Only trust a review the API returns as THIS cycle's verdict when
+            # either the fingerprint gate deliberately skipped Claude (SKIP ==
+            # true, so reusing the prior verdict is the intended behaviour) or
+            # Claude actually completed a run this cycle (CLAUDE_OUTCOME ==
+            # success). The claude step's own `if:` runs exactly when this
+            # else-branch is reached and SKIP != true, so if we get here with
+            # SKIP == false, Claude was supposed to run — if it didn't finish
+            # successfully, the "latest review" the API returns is still last
+            # cycle's verdict for the OLD diff. Treat that as no verdict and
+            # fall through to the CLAUDE_OUTCOME/429 handling below instead of
+            # posting success for a diff nobody reviewed.
+            review_state=""
+            verdict_origin="live"
+            if [[ "$SKIP" == "true" || "$CLAUDE_OUTCOME" == "success" ]]; then
+              resolved=""
+              for attempt in 1 2 3; do
+                resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+                  --jq '[.[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
+                        | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
+                        | last
+                        | if . == null then ""
+                          elif .state != "DISMISSED" then .state
+                          else ((((.body // "") | capture("Verdict\\*\\*:[ \t]*(?<v>[^\n]*)")? | .v) // "")
+                            | if test("Changes required") then "CHANGES_REQUESTED:dismissed"
+                              elif test("Safe to merge") then "APPROVED:dismissed"
+                              else "" end)
+                          end' 2>/dev/null || echo "")
+                [[ -n "$resolved" ]] && break
+                echo "Attempt $attempt: resolved='' - retrying in 5s..."
+                sleep 5
+              done
+              review_state="${resolved%%:*}"
+              verdict_origin="${resolved#*:}"
+              [[ "$verdict_origin" == "$resolved" ]] && verdict_origin="live"
+              echo "Resolved verdict: state='$review_state' origin='$verdict_origin'"
+            else
+              echo "Diff changed this cycle (SKIP=false) and Claude did not complete (outcome=${CLAUDE_OUTCOME:-none}) - not reusing any existing review as this cycle's verdict"
+            fi
 
             if [[ "$review_state" == "APPROVED" ]]; then
               state="success"
