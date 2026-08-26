@@ -272,8 +272,24 @@ jobs:
           # entirely and let the status step re-post the prior verdict. This is a
           # PRE-LLM gate: the prompt has its own "skip redundant re-reviews" check,
           # but that one still spins Claude up and burns turns to decide to skip.
-          fingerprint=$(gh pr diff "$PR" 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
-          fingerprint="${fingerprint:-none}"
+          #
+          # `gh pr diff` must be checked on its OWN exit status, not piped straight
+          # into sha256sum: sha256sum happily hashes whatever (possibly empty)
+          # stdout a failed `gh` produced, so a failure would silently mint a
+          # normal-looking 64-hex fingerprint instead of signalling "no diff". Two
+          # independent `gh pr diff` failures at different times (empty stdin always
+          # hashes to the same constant) could then match each other and skip a
+          # review the changed diff never actually got. Using an `if` as the guard
+          # is safe under this step's errexit (`bash -e`): a command tested as an
+          # `if` condition doesn't trigger it.
+          if diff_output=$(gh pr diff "$PR" 2>/dev/null); then
+            fingerprint=$(printf '%s' "$diff_output" | sha256sum | cut -d' ' -f1)
+          else
+            # Sentinel, not a real hash: never matches a stored 64-hex fingerprint,
+            # so a failed fetch can neither trigger a false skip nor itself get
+            # cached as if the diff were known.
+            fingerprint="none"
+          fi
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
           # Stored fingerprint lives in a hidden marker inside the sticky usage
