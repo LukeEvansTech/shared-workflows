@@ -822,6 +822,28 @@ jobs:
             # long comment there for why. Emits "<STATE>" for a live review or
             # "<STATE>:dismissed" when the verdict had to be recovered from the body
             # of a review that dismiss_stale_reviews_on_push wiped.
+            #
+            # Which reviews may count as THIS cycle's verdict depends on why we
+            # are here. After a fingerprint skip (SKIP == true) the diff is
+            # byte-identical to one Claude already reviewed, so the latest
+            # verdict on the PR is reused whatever commit it was posted
+            # against. Otherwise the diff changed and Claude was meant to run,
+            # so only a review submitted against THIS head commit says
+            # anything about THIS diff: a review's commit_id is the head SHA
+            # it was posted at, so anything older is last cycle's verdict for
+            # the OLD diff. Without that filter a Claude step that errored
+            # before posting inherited the stale approval and this step
+            # posted success for a diff nobody had reviewed. Filtering on the
+            # commit rather than on the step's outcome also keeps a verdict
+            # Claude DID post this cycle even if its step then failed (a
+            # timeout after the review went up), which an outcome gate would
+            # have thrown away. SKIP and SHA are read from the environment
+            # inside jq so the program stays single-quoted.
+            if [[ "$SKIP" == "true" ]]; then
+              echo "Verdict scope: latest review on the PR (diff unchanged since it was reviewed)"
+            else
+              echo "Verdict scope: reviews posted against $SHA only"
+            fi
             resolved=""
             for attempt in 1 2 3; do
               # --slurp: same page-local-vs-global "last" bug as the
@@ -829,7 +851,8 @@ jobs:
               # comments fetch there for why the filter runs in standalone jq).
               resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp 2>/dev/null \
                 | jq -r '[(add // [])[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
-                      | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
+                      | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")
+                      | select(env.SKIP == "true" or .commit_id == env.SHA)]
                       | last
                       | if . == null then ""
                         elif .state != "DISMISSED" then .state
