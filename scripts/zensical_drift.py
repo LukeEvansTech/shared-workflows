@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from jsonc_to_json import convert as _jsonc_convert
+
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 FAILURES: list[str] = []
@@ -214,54 +216,16 @@ CENTRAL_PRESET = "github>LukeEvansTech/renovate-config"
 
 
 def _strip_jsonc(text: str) -> str:
-    """Best-effort JSON5/JSONC → JSON so stdlib json can parse it.
+    """JSON5/JSONC -> JSON, via jsonc_to_json.convert.
 
-    Handles the house `.renovaterc.json5` idiom (prettier-formatted): `//` line
-    comments, `/* */` block comments (both only OUTSIDE string literals),
-    trailing commas, and unquoted identifier keys. Keys with non-identifier
-    characters are already quoted in valid JSON5; check_renovate falls back to
-    a substring check if a parse still fails.
+    One implementation for every reader of a caller's `.renovaterc.json5`:
+    this script and renovate-review.yml's blast-list step (which fetches
+    jsonc_to_json.py at its own pinned commit). Kept under this name because
+    check_renovate and the tests call it. See jsonc_to_json.py for what it
+    covers -- single-quoted strings and inline `{ key: ... }` objects included,
+    both of which the previous line-anchored regex version could not parse.
     """
-    # Comment removal is STRING-AWARE: a regex-only pass treats `/*` inside a
-    # string literal (e.g. ignorePaths: [".archive/**"]) as a comment opener,
-    # and the first `*/` anywhere later (even inside another comment, e.g. a
-    # `kubernetes/**/...` glob mentioned in prose) as its closer — swallowing
-    # everything between, including the extends line (talos-cluster #3709).
-    out: list[str] = []
-    i, n = 0, len(text)
-    quote: str | None = None
-    while i < n:
-        c = text[i]
-        if quote is not None:
-            out.append(c)
-            if c == "\\" and i + 1 < n:  # keep escaped chars verbatim
-                out.append(text[i + 1])
-                i += 2
-                continue
-            if c == quote:
-                quote = None
-            i += 1
-            continue
-        if c in "\"'":
-            quote = c
-            out.append(c)
-            i += 1
-            continue
-        if c == "/" and i + 1 < n and text[i + 1] == "/":  # line comment
-            j = text.find("\n", i)
-            i = n if j == -1 else j
-            continue
-        if c == "/" and i + 1 < n and text[i + 1] == "*":  # block comment
-            j = text.find("*/", i + 2)
-            i = n if j == -1 else j + 2
-            continue
-        out.append(c)
-        i += 1
-    text = "".join(out)
-    text = re.sub(r",(\s*[}\]])", r"\1", text)  # trailing commas
-    # quote unquoted identifier keys: `  extends:` -> `  "extends":`
-    text = re.sub(r"(?m)^(\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)", r'\1"\2"\3', text)
-    return text
+    return _jsonc_convert(text)
 
 
 def check_renovate(repo_root: Path) -> None:
@@ -305,7 +269,8 @@ def check_renovate(repo_root: Path) -> None:
                 "pinGitHubActionDigests via home-operations/renovate-presets)",
             )
         return
-    # Could not parse even after stripping comments (e.g. unquoted JSON5 keys):
+    # Could not parse even after conversion (a JSON5 construct jsonc_to_json
+    # does not cover, e.g. hex numbers):
     # fall back to a textual check for the preset reference in the de-commented body.
     if CENTRAL_PRESET not in _strip_jsonc(raw):
         fail(

@@ -175,12 +175,36 @@ jobs:
           # for which components are critical. Everything below derives from it so
           # the workflow's blast-radius list can never drift from that config.
           RULE_DESCRIPTION: ${{ inputs.protected-rule-description }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_REPO: ${{ job.workflow_repository }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
         run: |
           set -uo pipefail
-          # json5 converts the JSON5 config to plain JSON so jq can read it. Each
-          # matchPackageNames entry is a JS regex literal like "/cilium/" or
-          # "/fluxcd\\//" (escaped slash) — strip the leading/trailing "/"
-          # delimiters and join with "|" into one alternation regex.
+          # scripts/jsonc_to_json.py converts the caller's .renovaterc.json5 to
+          # plain JSON so jq can read it below. It is fetched from THIS
+          # reusable's own repository at the commit the caller pinned
+          # (job.workflow_sha) -- the same trust boundary as this YAML file --
+          # rather than run through `npx json5@2`, which pulled whatever
+          # satisfied that range from the npm registry at run time, unpinned
+          # and unverified, inside the job that later handles the Claude OAuth
+          # secret. It lands in RUNNER_TEMP, outside the workspace, so the
+          # reviewer's Glob/Grep never sees it (same reason the usage reporter
+          # is checked out only after the claude step).
+          converter="$RUNNER_TEMP/jsonc_to_json.py"
+          if ! gh api -H 'Accept: application/vnd.github.raw+json' \
+               "repos/$WORKFLOW_REPO/contents/scripts/jsonc_to_json.py?ref=$WORKFLOW_SHA" > "$converter"; then
+            echo "::error::could not fetch scripts/jsonc_to_json.py from $WORKFLOW_REPO@$WORKFLOW_SHA"
+            exit 1
+          fi
+          if ! python3 "$converter" .renovaterc.json5 > /tmp/renovaterc.json; then
+            echo "::error::.renovaterc.json5 could not be converted to JSON - see the converter's message above"
+            exit 1
+          fi
+          #
+          # Each matchPackageNames entry is a quoted JS regex literal like
+          # "/cilium/" or "/fluxcd\\//" (escaped slash) — strip the
+          # leading/trailing "/" delimiters and join with "|" into one
+          # alternation regex.
           #
           # This regex is matched against the Renovate PR *title*, not a raw
           # package name. Grouped updates (Flux/Talos/Kubernetes/Rook-Ceph/...)
@@ -191,7 +215,6 @@ jobs:
           # "fluxcd\/"). So also pull in the groupName of every packageRule
           # that shares a matchPackageNames entry with the protected-infra
           # rule, or those grouped bumps would silently under-match.
-          npx --yes json5@2 .renovaterc.json5 > /tmp/renovaterc.json
           blast=$(jq -r --arg desc "$RULE_DESCRIPTION" '
               (.packageRules[] | select(.description == $desc) | .matchPackageNames) as $protected
               | (
