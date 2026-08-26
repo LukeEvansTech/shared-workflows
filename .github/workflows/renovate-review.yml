@@ -728,10 +728,18 @@ jobs:
         run: |
           context="claude/renovate-review"
 
-          if [[ "$IS_RENOVATE" != "true" ]]; then
+          if [[ "$IS_RENOVATE" == "false" ]]; then
             # Human PR or non-Renovate author - not gated.
             state="success"
             desc="Not a Renovate PR - skipped"
+          elif [[ "$IS_RENOVATE" != "true" ]]; then
+            # Classify PR step failed before writing its output (e.g. a
+            # transient `gh pr view` error killed it under bash -e), so
+            # IS_RENOVATE is empty rather than "false". Fail closed instead of
+            # treating an unclassified PR as a confirmed non-Renovate one -
+            # that would let a real Renovate PR through unreviewed.
+            state="failure"
+            desc="Classify PR step failed - could not determine Renovate status, re-run"
           elif [[ "$GATED" != "true" ]]; then
             # Digest-only or GitHub Actions bump - ungated, pass through.
             state="success"
