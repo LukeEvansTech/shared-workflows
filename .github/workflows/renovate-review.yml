@@ -272,16 +272,44 @@ jobs:
           # entirely and let the status step re-post the prior verdict. This is a
           # PRE-LLM gate: the prompt has its own "skip redundant re-reviews" check,
           # but that one still spins Claude up and burns turns to decide to skip.
-          fingerprint=$(gh pr diff "$PR" 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
-          fingerprint="${fingerprint:-none}"
+          #
+          # `gh pr diff` must be checked on its OWN exit status, not piped straight
+          # into sha256sum: sha256sum happily hashes whatever (possibly empty)
+          # stdout a failed `gh` produced, so a failure would silently mint a
+          # normal-looking 64-hex fingerprint instead of signalling "no diff". Two
+          # independent `gh pr diff` failures at different times (empty stdin always
+          # hashes to the same constant) could then match each other and skip a
+          # review the changed diff never actually got. Using an `if` as the guard
+          # is safe under this step's errexit (`bash -e`): a command tested as an
+          # `if` condition doesn't trigger it.
+          if diff_output=$(gh pr diff "$PR" 2>/dev/null); then
+            fingerprint=$(printf '%s' "$diff_output" | sha256sum | cut -d' ' -f1)
+          else
+            # Sentinel, not a real hash: never matches a stored 64-hex fingerprint,
+            # so a failed fetch can neither trigger a false skip nor itself get
+            # cached as if the diff were known.
+            fingerprint="none"
+          fi
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
           # Stored fingerprint lives in a hidden marker inside the sticky usage
           # comment, written by report-claude-usage.sh only when a real review ran.
           # grep exits 1 on no match (first run) -> guard with || true.
-          stored=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-            --jq "[.[] | select(.user.login==\"github-actions[bot]\" and (.body|contains(\"$USAGE_MARKER\")))] | last | .body // \"\"" \
-            2>/dev/null | grep -oE 'fingerprint:[0-9a-f]{64}' | head -1 | cut -d: -f2 || true)
+          # --slurp is required: --paginate alone runs a filter once PER PAGE, so
+          # `last` would only ever see the last matching comment on whichever
+          # page happened to be fetched, not the true latest across the whole
+          # PR, once comments exceed one page (default 30 per page). --slurp
+          # wraps all pages into an outer array; `add[]` flattens that back
+          # into a single stream of comments before filtering. The filter has
+          # to run in a standalone jq: gh refuses `--slurp` together with its
+          # own `--jq` ("the --slurp option is not supported with --jq"), and
+          # that refusal was being swallowed by the `|| true` below, leaving
+          # every fingerprint lookup empty. `add // []` guards the no-pages
+          # case, where the outer array is empty and `add` yields null.
+          stored=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp 2>/dev/null \
+            | jq -r --arg marker "$USAGE_MARKER" \
+                '[(add // [])[] | select(.user.login=="github-actions[bot]" and (.body|contains($marker)))] | last | .body // ""' \
+                2>/dev/null | grep -oE 'fingerprint:[0-9a-f]{64}' | head -1 | cut -d: -f2 || true)
 
           # A prior verdict must exist for the skip to be safe — the status step
           # re-derives success/failure from it.
@@ -305,8 +333,11 @@ jobs:
           # Parsing is scoped to the verdict LINE and tests "Changes required"
           # before "Safe to merge", so it fails closed: a dismissed change-request
           # still blocks, an unparsable body yields "" and is not reused.
-          prior=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-            --jq '[.[] | select(.user.login=="claude[bot]" or .user.login=="github-actions[bot]")
+          # --slurp: same page-local-vs-global "last" bug as the comments
+          # fetch above — see the comment there, including why the filter runs
+          # in a standalone jq rather than gh's own --jq.
+          prior=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp 2>/dev/null \
+            | jq -r '[(add // [])[] | select(.user.login=="claude[bot]" or .user.login=="github-actions[bot]")
                   | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
                   | last
                   | if . == null then ""
@@ -433,7 +464,25 @@ jobs:
           detail=""
           if [[ "$state" == "invalid" ]]; then
             if [[ "$code" == "403" ]]; then
-              reason="org-policy"
+              # permission_error alone only proves the token is refused for
+              # SOME reason (qualified above) - it does not prove THIS reason
+              # is the org-policy denial. state stays "invalid" either way
+              # (fail CLOSED for every permission_error 403, same as before),
+              # so this only decides which remediation message the operator
+              # sees - never whether the PR is blocked. Anthropic hasn't
+              # documented a `.error.details.error_code` for this response
+              # the way it does for 429's enforced_spend_limit_reached below,
+              # so also match the known code name in `.error.message` -
+              # same "message can't be trusted blindly" caveat as the 429
+              # branch, but a miss here just falls back to the generic
+              # message rather than the wrong specific one.
+              err_code_403=$(jq -r '.error.details.error_code // ""' /tmp/tokresp.json 2>/dev/null || echo "")
+              err_msg_403=$(jq -r '(.error.message // .message // empty)' /tmp/tokresp.json 2>/dev/null || echo "")
+              if [[ "$err_code_403" == "oauth_org_not_allowed" || "$err_msg_403" == *oauth_org_not_allowed* ]]; then
+                reason="org-policy"
+              else
+                reason="permission-denied"
+              fi
             else
               reason="expired-or-revoked"
             fi
@@ -728,10 +777,18 @@ jobs:
         run: |
           context="claude/renovate-review"
 
-          if [[ "$IS_RENOVATE" != "true" ]]; then
+          if [[ "$IS_RENOVATE" == "false" ]]; then
             # Human PR or non-Renovate author - not gated.
             state="success"
             desc="Not a Renovate PR - skipped"
+          elif [[ "$IS_RENOVATE" != "true" ]]; then
+            # Classify PR step failed before writing its output (e.g. a
+            # transient `gh pr view` error killed it under bash -e), so
+            # IS_RENOVATE is empty rather than "false". Fail closed instead of
+            # treating an unclassified PR as a confirmed non-Renovate one -
+            # that would let a real Renovate PR through unreviewed.
+            state="failure"
+            desc="Classify PR step failed - could not determine Renovate status, re-run"
           elif [[ "$GATED" != "true" ]]; then
             # Digest-only or GitHub Actions bump - ungated, pass through.
             state="success"
@@ -744,6 +801,8 @@ jobs:
             state="failure"
             if [[ "$TOKEN_REASON" == "org-policy" ]]; then
               desc="Claude Code disabled for this token's org - re-mint from an allowed account (review skipped)"
+            elif [[ "$TOKEN_REASON" == "permission-denied" ]]; then
+              desc="Claude Code request denied (HTTP 403) - cause unconfirmed, investigate before rotating (review skipped)"
             else
               desc="OAuth token invalid/expired/revoked - rotate CLAUDE_CODE_OAUTH_TOKEN (review skipped)"
             fi
@@ -763,45 +822,30 @@ jobs:
             # long comment there for why. Emits "<STATE>" for a live review or
             # "<STATE>:dismissed" when the verdict had to be recovered from the body
             # of a review that dismiss_stale_reviews_on_push wiped.
-            #
-            # Only trust a review the API returns as THIS cycle's verdict when
-            # either the fingerprint gate deliberately skipped Claude (SKIP ==
-            # true, so reusing the prior verdict is the intended behaviour) or
-            # Claude actually completed a run this cycle (CLAUDE_OUTCOME ==
-            # success). The claude step's own `if:` runs exactly when this
-            # else-branch is reached and SKIP != true, so if we get here with
-            # SKIP == false, Claude was supposed to run — if it didn't finish
-            # successfully, the "latest review" the API returns is still last
-            # cycle's verdict for the OLD diff. Treat that as no verdict and
-            # fall through to the CLAUDE_OUTCOME/429 handling below instead of
-            # posting success for a diff nobody reviewed.
-            review_state=""
-            verdict_origin="live"
-            if [[ "$SKIP" == "true" || "$CLAUDE_OUTCOME" == "success" ]]; then
-              resolved=""
-              for attempt in 1 2 3; do
-                resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-                  --jq '[.[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
-                        | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
-                        | last
-                        | if . == null then ""
-                          elif .state != "DISMISSED" then .state
-                          else ((((.body // "") | capture("Verdict\\*\\*:[ \t]*(?<v>[^\n]*)")? | .v) // "")
-                            | if test("Changes required") then "CHANGES_REQUESTED:dismissed"
-                              elif test("Safe to merge") then "APPROVED:dismissed"
-                              else "" end)
-                          end' 2>/dev/null || echo "")
-                [[ -n "$resolved" ]] && break
-                echo "Attempt $attempt: resolved='' - retrying in 5s..."
-                sleep 5
-              done
-              review_state="${resolved%%:*}"
-              verdict_origin="${resolved#*:}"
-              [[ "$verdict_origin" == "$resolved" ]] && verdict_origin="live"
-              echo "Resolved verdict: state='$review_state' origin='$verdict_origin'"
-            else
-              echo "Diff changed this cycle (SKIP=false) and Claude did not complete (outcome=${CLAUDE_OUTCOME:-none}) - not reusing any existing review as this cycle's verdict"
-            fi
+            resolved=""
+            for attempt in 1 2 3; do
+              # --slurp: same page-local-vs-global "last" bug as the
+              # fingerprint gate's resolver above — see that comment (and the
+              # comments fetch there for why the filter runs in standalone jq).
+              resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp 2>/dev/null \
+                | jq -r '[(add // [])[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
+                      | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
+                      | last
+                      | if . == null then ""
+                        elif .state != "DISMISSED" then .state
+                        else ((((.body // "") | capture("Verdict\\*\\*:[ \t]*(?<v>[^\n]*)")? | .v) // "")
+                          | if test("Changes required") then "CHANGES_REQUESTED:dismissed"
+                            elif test("Safe to merge") then "APPROVED:dismissed"
+                            else "" end)
+                        end' 2>/dev/null || echo "")
+              [[ -n "$resolved" ]] && break
+              echo "Attempt $attempt: resolved='' - retrying in 5s..."
+              sleep 5
+            done
+            review_state="${resolved%%:*}"
+            verdict_origin="${resolved#*:}"
+            [[ "$verdict_origin" == "$resolved" ]] && verdict_origin="live"
+            echo "Resolved verdict: state='$review_state' origin='$verdict_origin'"
 
             if [[ "$review_state" == "APPROVED" ]]; then
               state="success"
@@ -823,15 +867,29 @@ jobs:
               # This is an anomaly worth a human look, not a transient blip - fail.
               state="failure"
               desc="Claude finished without posting a verdict - review manually"
+            elif [[ "$CLAUDE_OUTCOME" == "skipped" ]]; then
+              # The Claude step's own `if:` already rules out the two legitimate
+              # skip reasons above (fingerprint SKIP, TOKEN_STATE invalid/rate-
+              # limited) and GATED is 'true' here - so a skip at this point can
+              # only mean a prerequisite step upstream (blast list, model tier,
+              # fingerprint check, repo context, token validation) failed and
+              # GitHub Actions' implicit success() gating skipped everything
+              # after it, Claude included. Claude never got a chance to run, so
+              # there is no verdict to pass through - fail closed like every
+              # other "Claude didn't review this" case, per the fail-closed
+              # design this workflow exists to enforce (see CLAUDE.md).
+              state="failure"
+              desc="A prerequisite step failed before Claude could run - check the workflow run, review manually"
             else
-              # Claude step errored/cancelled with no verdict posted. The usage
-              # window can also run out MID-review (the pre-flight passed, a later
-              # turn got 429): the action's result record then carries
-              # api_error_status=429 and the reset time. That is the same hours-long
-              # outage as the pre-flight case, so fail closed on it. Anything else
-              # (API blip, timeout) is a genuine transient failure != changes-
-              # requested: pass through so the auto-merge pipeline isn't wedged.
-              # Surfaced in the status for audit either way.
+              # Claude step actually started and then errored/was cancelled with
+              # no verdict posted. The usage window can also run out MID-review
+              # (the pre-flight passed, a later turn got 429): the action's
+              # result record then carries api_error_status=429 and the reset
+              # time. That is the same hours-long outage as the pre-flight case,
+              # so fail closed on it. Anything else (API blip, timeout) is a
+              # genuine transient failure != changes-requested: pass through so
+              # the auto-merge pipeline isn't wedged. Surfaced in the status for
+              # audit either way.
               limit_msg=""
               if [[ -n "${EXEC_FILE:-}" && -f "$EXEC_FILE" ]]; then
                 limit_msg=$(jq -r 'map(select(.type=="result")) | last | select(.api_error_status == 429) | .result // "429"' \
@@ -902,6 +960,8 @@ jobs:
         run: |-
           if [[ "$TOKEN_REASON" == "org-policy" ]]; then
             echo "::error title=Claude Code blocked by org policy::CLAUDE_CODE_OAUTH_TOKEN authenticates but is refused (HTTP 403 permission_error / oauth_org_not_allowed): the Claude organization behind it has disabled Claude subscription access for Claude Code. Rotating the same token will NOT help - it must be re-minted from an account whose org allows Claude Code. Check with 'claude auth status', then 'claude setup-token', then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN -R ${REPO}', then bump the 'expires' date on the 1Password 'Claude Code OAuth Token' item. Renovate AI review is blocked until fixed."
+          elif [[ "$TOKEN_REASON" == "permission-denied" ]]; then
+            echo "::error title=Claude Code blocked (permission denied)::CLAUDE_CODE_OAUTH_TOKEN authenticates but is refused (HTTP 403 permission_error) for a reason other than the confirmed org-policy denial (oauth_org_not_allowed). Re-minting from another account is NOT confirmed to fix this - check 'claude auth status' and the Anthropic response body logged by the 'Validate OAuth token' step before acting. Renovate AI review is blocked until resolved."
           else
             echo "::error title=Claude OAuth token invalid::CLAUDE_CODE_OAUTH_TOKEN failed authentication (HTTP 401 authentication_error) - it is expired or revoked. Rotate it: run 'claude setup-token', then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN -R ${REPO}', then bump the 'expires' date on the 1Password 'Claude Code OAuth Token' item. Renovate AI review is blocked until rotated."
           fi
