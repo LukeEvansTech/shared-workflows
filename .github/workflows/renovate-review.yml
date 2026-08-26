@@ -295,15 +295,21 @@ jobs:
           # Stored fingerprint lives in a hidden marker inside the sticky usage
           # comment, written by report-claude-usage.sh only when a real review ran.
           # grep exits 1 on no match (first run) -> guard with || true.
-          # --slurp is required: --paginate alone runs --jq once PER PAGE, so
+          # --slurp is required: --paginate alone runs a filter once PER PAGE, so
           # `last` would only ever see the last matching comment on whichever
           # page happened to be fetched, not the true latest across the whole
           # PR, once comments exceed one page (default 30 per page). --slurp
           # wraps all pages into an outer array; `add[]` flattens that back
-          # into a single stream of comments before filtering.
-          stored=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
-            --jq "[add[] | select(.user.login==\"github-actions[bot]\" and (.body|contains(\"$USAGE_MARKER\")))] | last | .body // \"\"" \
-            2>/dev/null | grep -oE 'fingerprint:[0-9a-f]{64}' | head -1 | cut -d: -f2 || true)
+          # into a single stream of comments before filtering. The filter has
+          # to run in a standalone jq: gh refuses `--slurp` together with its
+          # own `--jq` ("the --slurp option is not supported with --jq"), and
+          # that refusal was being swallowed by the `|| true` below, leaving
+          # every fingerprint lookup empty. `add // []` guards the no-pages
+          # case, where the outer array is empty and `add` yields null.
+          stored=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp 2>/dev/null \
+            | jq -r --arg marker "$USAGE_MARKER" \
+                '[(add // [])[] | select(.user.login=="github-actions[bot]" and (.body|contains($marker)))] | last | .body // ""' \
+                2>/dev/null | grep -oE 'fingerprint:[0-9a-f]{64}' | head -1 | cut -d: -f2 || true)
 
           # A prior verdict must exist for the skip to be safe — the status step
           # re-derives success/failure from it.
@@ -328,10 +334,10 @@ jobs:
           # before "Safe to merge", so it fails closed: a dismissed change-request
           # still blocks, an unparsable body yields "" and is not reused.
           # --slurp: same page-local-vs-global "last" bug as the comments
-          # fetch above — see the comment there. Flatten with add[] before
-          # selecting.
-          prior=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp \
-            --jq '[add[] | select(.user.login=="claude[bot]" or .user.login=="github-actions[bot]")
+          # fetch above — see the comment there, including why the filter runs
+          # in a standalone jq rather than gh's own --jq.
+          prior=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp 2>/dev/null \
+            | jq -r '[(add // [])[] | select(.user.login=="claude[bot]" or .user.login=="github-actions[bot]")
                   | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
                   | last
                   | if . == null then ""
@@ -819,9 +825,10 @@ jobs:
             resolved=""
             for attempt in 1 2 3; do
               # --slurp: same page-local-vs-global "last" bug as the
-              # fingerprint gate's resolver above — see that comment.
-              resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp \
-                --jq '[add[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
+              # fingerprint gate's resolver above — see that comment (and the
+              # comments fetch there for why the filter runs in standalone jq).
+              resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp 2>/dev/null \
+                | jq -r '[(add // [])[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
                       | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")]
                       | last
                       | if . == null then ""
