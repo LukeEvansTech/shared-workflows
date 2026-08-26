@@ -449,7 +449,25 @@ jobs:
           detail=""
           if [[ "$state" == "invalid" ]]; then
             if [[ "$code" == "403" ]]; then
-              reason="org-policy"
+              # permission_error alone only proves the token is refused for
+              # SOME reason (qualified above) - it does not prove THIS reason
+              # is the org-policy denial. state stays "invalid" either way
+              # (fail CLOSED for every permission_error 403, same as before),
+              # so this only decides which remediation message the operator
+              # sees - never whether the PR is blocked. Anthropic hasn't
+              # documented a `.error.details.error_code` for this response
+              # the way it does for 429's enforced_spend_limit_reached below,
+              # so also match the known code name in `.error.message` -
+              # same "message can't be trusted blindly" caveat as the 429
+              # branch, but a miss here just falls back to the generic
+              # message rather than the wrong specific one.
+              err_code_403=$(jq -r '.error.details.error_code // ""' /tmp/tokresp.json 2>/dev/null || echo "")
+              err_msg_403=$(jq -r '(.error.message // .message // empty)' /tmp/tokresp.json 2>/dev/null || echo "")
+              if [[ "$err_code_403" == "oauth_org_not_allowed" || "$err_msg_403" == *oauth_org_not_allowed* ]]; then
+                reason="org-policy"
+              else
+                reason="permission-denied"
+              fi
             else
               reason="expired-or-revoked"
             fi
@@ -768,6 +786,8 @@ jobs:
             state="failure"
             if [[ "$TOKEN_REASON" == "org-policy" ]]; then
               desc="Claude Code disabled for this token's org - re-mint from an allowed account (review skipped)"
+            elif [[ "$TOKEN_REASON" == "permission-denied" ]]; then
+              desc="Claude Code request denied (HTTP 403) - cause unconfirmed, investigate before rotating (review skipped)"
             else
               desc="OAuth token invalid/expired/revoked - rotate CLAUDE_CODE_OAUTH_TOKEN (review skipped)"
             fi
@@ -908,6 +928,8 @@ jobs:
         run: |-
           if [[ "$TOKEN_REASON" == "org-policy" ]]; then
             echo "::error title=Claude Code blocked by org policy::CLAUDE_CODE_OAUTH_TOKEN authenticates but is refused (HTTP 403 permission_error / oauth_org_not_allowed): the Claude organization behind it has disabled Claude subscription access for Claude Code. Rotating the same token will NOT help - it must be re-minted from an account whose org allows Claude Code. Check with 'claude auth status', then 'claude setup-token', then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN -R ${REPO}', then bump the 'expires' date on the 1Password 'Claude Code OAuth Token' item. Renovate AI review is blocked until fixed."
+          elif [[ "$TOKEN_REASON" == "permission-denied" ]]; then
+            echo "::error title=Claude Code blocked (permission denied)::CLAUDE_CODE_OAUTH_TOKEN authenticates but is refused (HTTP 403 permission_error) for a reason other than the confirmed org-policy denial (oauth_org_not_allowed). Re-minting from another account is NOT confirmed to fix this - check 'claude auth status' and the Anthropic response body logged by the 'Validate OAuth token' step before acting. Renovate AI review is blocked until resolved."
           else
             echo "::error title=Claude OAuth token invalid::CLAUDE_CODE_OAUTH_TOKEN failed authentication (HTTP 401 authentication_error) - it is expired or revoked. Rotate it: run 'claude setup-token', then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN -R ${REPO}', then bump the 'expires' date on the 1Password 'Claude Code OAuth Token' item. Renovate AI review is blocked until rotated."
           fi
