@@ -124,7 +124,10 @@ def test_cli_writes_json_and_fails_loudly(tmp_path):
     good = tmp_path / "good.json5"
     good.write_text("{extends: ['x'], // c\n}\n")
     res = subprocess.run(
-        [sys.executable, str(SCRIPT), str(good)], capture_output=True, text=True, check=False
+        [sys.executable, str(SCRIPT), str(good)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert res.returncode == 0, res.stderr
     assert json.loads(res.stdout) == {"extends": ["x"]}
@@ -132,7 +135,10 @@ def test_cli_writes_json_and_fails_loudly(tmp_path):
     bad = tmp_path / "bad.json5"
     bad.write_text("{extends: [0x1F]}\n")
     res = subprocess.run(
-        [sys.executable, str(SCRIPT), str(bad)], capture_output=True, text=True, check=False
+        [sys.executable, str(SCRIPT), str(bad)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert res.returncode == 1
     assert "not parseable" in res.stderr
@@ -141,6 +147,9 @@ def test_cli_writes_json_and_fails_loudly(tmp_path):
 @pytest.mark.parametrize("argv", [[], ["a", "b"]])
 def test_cli_usage(argv):
     res = subprocess.run(
-        [sys.executable, str(SCRIPT), *argv], capture_output=True, text=True, check=False
+        [sys.executable, str(SCRIPT), *argv],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert res.returncode == 2

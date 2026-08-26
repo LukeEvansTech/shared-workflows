@@ -30,74 +30,91 @@ _IDENT_CHARS = _IDENT_START | frozenset("0123456789")
 _WS = frozenset(" \t\r\n")
 
 
+def _read_string(text: str, i: int) -> tuple[str, int]:
+    """Copy the string literal opening at text[i]; return (JSON token, index after it).
+
+    Escapes are kept intact. A single-quoted JSON5 string becomes a
+    double-quoted one, so an embedded bare `"` gains a backslash and `\\'`
+    loses its own.
+    """
+    quote, j, buf = text[i], i + 1, []
+    n = len(text)
+    while j < n and text[j] != quote:
+        if text[j] == "\\" and j + 1 < n:
+            if quote == "'" and text[j + 1] == "'":
+                buf.append("'")
+            else:
+                buf.append(text[j : j + 2])
+            j += 2
+            continue
+        if quote == "'" and text[j] == '"':
+            buf.append('\\"')
+        else:
+            buf.append(text[j])
+        j += 1
+    return '"' + "".join(buf) + '"', j + 1
+
+
+def _read_word(text: str, i: int) -> tuple[str, int]:
+    """Read the bare word at text[i]; quote it when it is an object key.
+
+    A word is a key if the next non-blank character is `:`; otherwise it is a
+    literal (true/false/null) passed through for json to judge.
+    """
+    n = len(text)
+    j = i
+    while j < n and text[j] in _IDENT_CHARS:
+        j += 1
+    k = j
+    while k < n and text[k] in _WS:
+        k += 1
+    word = text[i:j]
+    return ('"' + word + '"' if k < n and text[k] == ":" else word), j
+
+
+def _skip_comment(text: str, i: int) -> int:
+    """Return the index just past the comment opening at text[i], or i if none."""
+    if text.startswith("//", i):
+        j = text.find("\n", i)
+        return len(text) if j == -1 else j
+    if text.startswith("/*", i):
+        j = text.find("*/", i + 2)
+        return len(text) if j == -1 else j + 2
+    return i
+
+
+def _drop_trailing_comma(out: list[str]) -> None:
+    """Remove a `,` separated from the closer about to be emitted only by whitespace.
+
+    Every entry in `out` is either one character of syntax/whitespace or a
+    whole string/word token, so a `,` entry is always structural.
+    """
+    k = len(out) - 1
+    while k >= 0 and out[k] in _WS:
+        k -= 1
+    if k >= 0 and out[k] == ",":
+        del out[k]
+
+
 def convert(text: str) -> str:
     """Return `text` rewritten as strict JSON (still a string; not parsed)."""
     out: list[str] = []
     i, n = 0, len(text)
     while i < n:
         c = text[i]
-
         if c in "\"'":
-            # String literal: copy through, keeping escapes intact. A
-            # single-quoted JSON5 string becomes a double-quoted one, so an
-            # embedded bare `"` gains a backslash and `\'` loses its own.
-            quote, j, buf = c, i + 1, []
-            while j < n and text[j] != quote:
-                if text[j] == "\\" and j + 1 < n:
-                    if quote == "'" and text[j + 1] == "'":
-                        buf.append("'")
-                    else:
-                        buf.append(text[j : j + 2])
-                    j += 2
-                    continue
-                if quote == "'" and text[j] == '"':
-                    buf.append('\\"')
-                else:
-                    buf.append(text[j])
-                j += 1
-            out.append('"' + "".join(buf) + '"')
-            i = j + 1
-            continue
-
-        if c == "/" and i + 1 < n and text[i + 1] == "/":
-            j = text.find("\n", i)
-            i = n if j == -1 else j
-            continue
-
-        if c == "/" and i + 1 < n and text[i + 1] == "*":
-            j = text.find("*/", i + 2)
-            i = n if j == -1 else j + 2
-            continue
-
-        if c in _IDENT_START:
-            # Bare word: a key if the next non-blank character is `:`, else a
-            # literal (true/false/null) passed through for json to judge.
-            j = i
-            while j < n and text[j] in _IDENT_CHARS:
-                j += 1
-            k = j
-            while k < n and text[k] in _WS:
-                k += 1
-            word = text[i:j]
-            out.append('"' + word + '"' if k < n and text[k] == ":" else word)
+            token, i = _read_string(text, i)
+            out.append(token)
+        elif c == "/" and (j := _skip_comment(text, i)) != i:
             i = j
-            continue
-
-        if c in "}]":
-            # Trailing comma: every entry in `out` is either one character of
-            # syntax/whitespace or a whole string/word token, so a `,` entry
-            # separated from this closer only by whitespace is structural.
-            k = len(out) - 1
-            while k >= 0 and out[k] in _WS:
-                k -= 1
-            if k >= 0 and out[k] == ",":
-                del out[k]
+        elif c in _IDENT_START:
+            token, i = _read_word(text, i)
+            out.append(token)
+        else:
+            if c in "}]":
+                _drop_trailing_comma(out)
             out.append(c)
             i += 1
-            continue
-
-        out.append(c)
-        i += 1
     return "".join(out)
 
 
