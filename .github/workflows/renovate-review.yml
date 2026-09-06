@@ -13,6 +13,9 @@
 # It replaces four hand-maintained ~700-line copies (talos-cluster, nut-apps,
 # seedbox-apps, truenas-apps) that drifted apart twice in three weeks — once on
 # 403 org-policy handling, once on 429 usage-limit handling. Fix things HERE.
+# 429s are classified by EVIDENCE: spend-cap needs the error_code, usage-limit
+# needs a retry-after or ratelimit-reset header, and anything else is reported
+# as rate-limit-unknown rather than guessed at.
 name: Renovate Review (reusable)
 
 on:
@@ -540,10 +543,16 @@ jobs:
               elif [[ -n "$reset" ]]; then
                 detail="resets $reset"
               else
-                # Neither header present: not a per-minute limit. Most likely a
-                # subscription/Claude-Code usage window, which reopens on its own
-                # schedule and tells us nothing here.
-                detail="${msg:-no reset time returned}"
+                # Neither header present, and no spend-cap code. We genuinely do
+                # NOT know what this is: a subscription usage window is only the
+                # most likely of several causes, and the others (a token minted
+                # from a different account, an entitlement change) are fixed by
+                # rotation, which the usage-window advice explicitly tells you
+                # not to do. Asserting a window here sent a real investigation
+                # the wrong way for over a week (2026-08-26..09-06), so say what
+                # came back instead of guessing. Still fails closed either way.
+                reason="rate-limit-unknown"
+                detail="${msg:-no reset info returned}"
               fi
             fi
             detail=$(printf '%s' "$detail" | head -c 100)
@@ -835,6 +844,8 @@ jobs:
             state="failure"
             if [[ "$TOKEN_REASON" == "spend-cap" ]]; then
               desc="Claude spend cap reached - raise the limit or wait for next month${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
+            elif [[ "$TOKEN_REASON" == "rate-limit-unknown" ]]; then
+              desc="Claude 429 with no reset info - cause unconfirmed, see run log${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
             else
               desc="Claude usage limit hit (429) - re-run once the window resets${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
             fi
@@ -1024,6 +1035,8 @@ jobs:
         run: |-
           if [[ "$TOKEN_REASON" == "spend-cap" ]]; then
             echo "::error title=Claude spend cap reached::CLAUDE_CODE_OAUTH_TOKEN is valid, but the organization behind it has hit its monthly API SPEND CAP (HTTP 429 rate_limit_error / enforced_spend_limit_reached${TOKEN_DETAIL:+: $TOKEN_DETAIL}). Re-running will NOT help and neither will rotating the token - access does not resume until 00:00 UTC on the 1st of next month, or until the spend limit is raised at platform.claude.com/settings/billing. The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed."
+          elif [[ "$TOKEN_REASON" == "rate-limit-unknown" ]]; then
+            echo "::error title=Claude 429 - cause unconfirmed::CLAUDE_CODE_OAUTH_TOKEN authenticates, but the API returned HTTP 429 rate_limit_error with NO retry-after header, NO anthropic-ratelimit-*-reset header and no spend-cap code${TOKEN_DETAIL:+ (body said: $TOKEN_DETAIL)}. That is not enough to tell you why. Candidates, roughly in order: (1) a Claude subscription usage window, which reopens on its own and needs only a re-run; (2) the token was minted by 'claude setup-token' from a DIFFERENT account than the one whose usage you are watching, so that account's reset is irrelevant - check which account, and rotate if it is the wrong one; (3) an entitlement or plan change on the account behind the token, also fixed by rotation. Do NOT assume (1): this workflow used to assert it, and that cost a week of looking at the wrong account. The raw body and any rate-limit headers are logged in the token-check step above; the response's request_id is the thread to give Anthropic support. The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed."
           else
             echo "::error title=Claude usage limit hit::CLAUDE_CODE_OAUTH_TOKEN is valid, but the Claude subscription behind it has spent its usage window (HTTP 429 rate_limit_error${TOKEN_DETAIL:+: $TOKEN_DETAIL}). The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed. Re-run this workflow once the window resets - do NOT rotate the token. If this recurs, CI reviews are competing with interactive Claude Code sessions on the same subscription: enable extra usage or move the workflow to an API key."
           fi
