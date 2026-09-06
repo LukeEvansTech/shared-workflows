@@ -15,7 +15,8 @@
 # 403 org-policy handling, once on 429 usage-limit handling. Fix things HERE.
 # 429s are classified by EVIDENCE: spend-cap needs the error_code, usage-limit
 # needs a retry-after or ratelimit-reset header, and anything else is reported
-# as rate-limit-unknown rather than guessed at.
+# as rate-limit-unknown and does NOT gate the review — since 2026-08-23 the API
+# returns a content-free 429 to this pre-flight regardless of account health.
 name: Renovate Review (reusable)
 
 on:
@@ -433,8 +434,8 @@ jobs:
           # errors (so a blip doesn't wedge auto-merge), which would otherwise let
           # an EXPIRED/REVOKED token silently pass PRs through unreviewed. This step
           # closes that gap: a clean 401 is flagged loudly and blocks (fail closed);
-          # 429 (usage window spent) blocks too, with a re-run as the fix (see the
-          # case arm); 400/5xx/timeout is "inconclusive" (our request or the
+          # an EVIDENCED 429 (spend cap, or a real limit carrying reset headers)
+          # blocks too; 400/5xx/timeout is "inconclusive" (our request or the
           # network, not the token) so header/model drift can never false-flag.
           #
           # sk-ant-oat01 OAuth tokens authenticate via `Authorization: Bearer`
@@ -469,12 +470,13 @@ jobs:
                 state=inconclusive
               fi
               ;;
-            # 429 rate_limit_error: the token is alive but the Claude subscription
-            # behind it has spent its usage window, which can stay shut for hours.
-            # Left inconclusive it rides the pass-through path and every gated PR
-            # goes green unreviewed until the window resets — three PRs on
-            # 2026-08-17, two of them auto-merge eligible. Fail CLOSED like a dead
-            # token; the fix is a re-run once the window resets, not a rotation.
+            # 429 rate_limit_error: provisionally fail CLOSED, because a real
+            # usage window can stay shut for hours and letting it ride the
+            # pass-through path takes every gated PR green unreviewed (three PRs
+            # on 2026-08-17, two of them auto-merge eligible). The classification
+            # block below then downgrades the subset that carries NO evidence —
+            # see there for why. Order matters: assume the worst, then relax only
+            # on proof.
             429) state=rate-limited ;;
             *) state=inconclusive ;;
           esac
@@ -556,6 +558,32 @@ jobs:
               fi
             fi
             detail=$(printf '%s' "$detail" | head -c 100)
+            # An evidence-free 429 must NOT gate the review. Since 2026-08-23 the
+            # API returns exactly this shape — rate_limit_error, message "Error",
+            # no error_code, no retry-after, no anthropic-ratelimit-* header — to
+            # a direct /v1/messages call bearing an sk-ant-oat01 subscription
+            # token, irrespective of account health: reproduced 2026-09-06 on a
+            # token minted minutes earlier, from a laptop and from Actions, on an
+            # account at 3% of its session window and 14% of its week. The same
+            # token drives claude-code-action fine, so the response says nothing
+            # about the token and blocking on it blocks on noise. It did: every
+            # gated PR across the estate was frozen from 2026-08-23 to 09-06
+            # while the operator message insisted the usage window was spent.
+            #
+            # Fail-closed is preserved by three independent paths, so this is not
+            # a relaxation of the guarantee this workflow exists to enforce:
+            #   * a dead token still returns 401 authentication_error (verified
+            #     against a bogus token the same day, not assumed);
+            #   * a spend cap still carries enforced_spend_limit_reached, and a
+            #     real rate limit still carries its reset headers — both keep
+            #     state=rate-limited above and still block;
+            #   * a usage limit with no evidence now surfaces mid-review instead,
+            #     where the status step's api_error_status==429 branch fails
+            #     closed. Worst case is a slower block, never a silent pass.
+            if [[ "$reason" == "rate-limit-unknown" ]]; then
+              state=inconclusive
+              echo "::notice::Pre-flight got a 429 carrying no spend-cap code and no reset headers - proceeding with the review (see the run log). A genuine limit will still fail closed mid-review."
+            fi
             # Log what actually came back, so the next shape change is
             # diagnosable from the run instead of by archaeology.
             echo "429 err_code=${err_code:-none} reason=$reason"
@@ -841,11 +869,12 @@ jobs:
           elif [[ "$TOKEN_STATE" == "rate-limited" ]]; then
             # Nothing ran, so there is no verdict to read. Fail closed either way,
             # but a spend-cap 429 is not fixed by a re-run — say which it is.
+            # reason=rate-limit-unknown cannot reach here: the token check
+            # downgrades an evidence-free 429 to inconclusive so the review still
+            # runs, and this branch only ever sees an EVIDENCED limit.
             state="failure"
             if [[ "$TOKEN_REASON" == "spend-cap" ]]; then
               desc="Claude spend cap reached - raise the limit or wait for next month${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
-            elif [[ "$TOKEN_REASON" == "rate-limit-unknown" ]]; then
-              desc="Claude 429 with no reset info - cause unconfirmed, see run log${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
             else
               desc="Claude usage limit hit (429) - re-run once the window resets${TOKEN_DETAIL:+: $TOKEN_DETAIL}"
             fi
@@ -1025,9 +1054,12 @@ jobs:
           exit 1
 
       - name: Flag usage limit
-        # Usage window spent before the review started: the commit status already
-        # blocks the PR; go red with an annotation so the run can't be mistaken
-        # for a passed review. The fix is a re-run, NOT a token rotation.
+        # An EVIDENCED limit stopped the review before it started: the commit
+        # status already blocks the PR; go red with an annotation so the run
+        # can't be mistaken for a passed review. The fix is a re-run (or raising
+        # the spend cap), NOT a token rotation. An evidence-free 429 never
+        # reaches here — the token check downgrades it to inconclusive and the
+        # review proceeds, because that response says nothing about the token.
         if: steps.token_check.outputs.token_state == 'rate-limited'
         env:
           TOKEN_DETAIL: ${{ steps.token_check.outputs.token_detail }}
@@ -1035,9 +1067,7 @@ jobs:
         run: |-
           if [[ "$TOKEN_REASON" == "spend-cap" ]]; then
             echo "::error title=Claude spend cap reached::CLAUDE_CODE_OAUTH_TOKEN is valid, but the organization behind it has hit its monthly API SPEND CAP (HTTP 429 rate_limit_error / enforced_spend_limit_reached${TOKEN_DETAIL:+: $TOKEN_DETAIL}). Re-running will NOT help and neither will rotating the token - access does not resume until 00:00 UTC on the 1st of next month, or until the spend limit is raised at platform.claude.com/settings/billing. The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed."
-          elif [[ "$TOKEN_REASON" == "rate-limit-unknown" ]]; then
-            echo "::error title=Claude 429 - cause unconfirmed::CLAUDE_CODE_OAUTH_TOKEN authenticates, but the API returned HTTP 429 rate_limit_error with NO retry-after header, NO anthropic-ratelimit-*-reset header and no spend-cap code${TOKEN_DETAIL:+ (body said: $TOKEN_DETAIL)}. That is not enough to tell you why. Candidates, roughly in order: (1) a Claude subscription usage window, which reopens on its own and needs only a re-run; (2) the token was minted by 'claude setup-token' from a DIFFERENT account than the one whose usage you are watching, so that account's reset is irrelevant - check which account, and rotate if it is the wrong one; (3) an entitlement or plan change on the account behind the token, also fixed by rotation. Do NOT assume (1): this workflow used to assert it, and that cost a week of looking at the wrong account. The raw body and any rate-limit headers are logged in the token-check step above; the response's request_id is the thread to give Anthropic support. The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed."
           else
-            echo "::error title=Claude usage limit hit::CLAUDE_CODE_OAUTH_TOKEN is valid, but the Claude subscription behind it has spent its usage window (HTTP 429 rate_limit_error${TOKEN_DETAIL:+: $TOKEN_DETAIL}). The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed. Re-run this workflow once the window resets - do NOT rotate the token. If this recurs, CI reviews are competing with interactive Claude Code sessions on the same subscription: enable extra usage or move the workflow to an API key."
+            echo "::error title=Claude usage limit hit::CLAUDE_CODE_OAUTH_TOKEN is valid, but the Claude subscription behind it has spent its usage window (HTTP 429 rate_limit_error${TOKEN_DETAIL:+: $TOKEN_DETAIL}). The review was skipped and the commit status is failing so the PR cannot auto-merge unreviewed. Re-run this workflow once the window resets - do NOT rotate the token. The reset time is in the retry-after or anthropic-ratelimit-*-reset header logged by the token-check step above. If this recurs often, CI reviews share the subscription with interactive Claude Code sessions: enable extra usage or move the workflow to an API key."
           fi
           exit 1
