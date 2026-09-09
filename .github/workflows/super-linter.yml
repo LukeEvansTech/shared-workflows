@@ -94,6 +94,12 @@ jobs:
           # SARIF emit / linting only needs read-only checkout. (zizmor: artipacked)
           persist-credentials: false
 
+      - name: Set up Python for Ansible collections
+        if: hashFiles('ansible/requirements.yml') != ''
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
       - name: Install Ansible collections for syntax-check
         # ansible-lint inside super-linter runs `ansible-playbook --syntax-check`
         # on every playbook, which fails if a referenced collection can't resolve
@@ -110,7 +116,11 @@ jobs:
             # elsewhere on the runner (e.g. ansible.netcommon ships with the
             # hosted image, so without --force it is "skipped" and never lands
             # in ansible/collections where super-linter's container looks).
-            ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections --force
+            # ARC images do not include Ansible. Keep collection tooling outside
+            # the checkout so Super-Linter does not scan installed packages.
+            python -m venv "$RUNNER_TEMP/ansible"
+            "$RUNNER_TEMP/ansible/bin/python" -m pip install 'ansible-core==2.21.3'
+            "$RUNNER_TEMP/ansible/bin/ansible-galaxy" collection install -r ansible/requirements.yml -p ansible/collections --force
           else
             echo "no ansible/requirements.yml — skipping ansible collection install"
           fi
