@@ -58,6 +58,15 @@ def test_no_palette_fails():
     assert "2 [[project.theme.palette]] entries" in out or "need at least" in out
 
 
+def test_unscoped_tables_fail():
+    result = run_drift("bad-scope")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "[scope]" in out
+    assert "top-level `markdown_extensions`" in out
+    assert "top-level `nav`" in out
+
+
 def test_good_fixture_passes_palette_only():
     result = run_drift("good")
     out = result.stdout + result.stderr

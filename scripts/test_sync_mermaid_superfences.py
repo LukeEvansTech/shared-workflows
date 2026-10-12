@@ -9,7 +9,10 @@ import tomllib
 from sync_mermaid_superfences import already_enabled, enable_mermaid
 
 INLINE = """\
-[markdown_extensions.pymdownx]
+[project]
+site_name = "X"
+
+[project.markdown_extensions.pymdownx]
 highlight = { anchor_linenums = true }
 inlinehilite = {}
 snippets = {}
@@ -19,11 +22,14 @@ superfences = {}
 # pymdownx block is NOT last in the file — superfences removal happens mid-file,
 # table is appended at EOF; must still parse and register correctly.
 INLINE_NOT_LAST = """\
-[markdown_extensions.pymdownx]
-superfences = {}
-
 [project]
 site_name = "X"
+
+[project.markdown_extensions.pymdownx]
+superfences = {}
+
+[project.theme]
+name = "material"
 """
 
 
@@ -36,7 +42,7 @@ def test_transform_registers_custom_fence_and_is_valid_toml():
     assert out is not None
     tomllib.loads(out)  # raises if malformed
     assert already_enabled(out) is True
-    assert "[markdown_extensions.pymdownx.superfences]" in out
+    assert "[project.markdown_extensions.pymdownx.superfences]" in out
     assert "mermaid" in out
 
 
@@ -50,7 +56,7 @@ def test_transform_handles_superfences_not_at_eof():
     out = enable_mermaid(INLINE_NOT_LAST)
     assert out is not None
     data = tomllib.loads(out)
-    assert data["project"]["site_name"] == "X"  # unrelated table preserved
+    assert data["project"]["theme"]["name"] == "material"  # unrelated table preserved
     assert already_enabled(out) is True
 
 
@@ -59,3 +65,8 @@ def test_already_enabled_table_form_is_noop():
     assert enabled is not None
     assert already_enabled(enabled) is True
     assert enable_mermaid(enabled) is None
+
+
+def test_no_extension_table_is_left_on_defaults():
+    # zensical's defaults already render mermaid; adding a table would replace them
+    assert enable_mermaid('[project]\nsite_name = "X"\n') is None

@@ -15,6 +15,7 @@ import json as _json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 from jsonc_to_json import convert as _jsonc_convert
@@ -186,6 +187,33 @@ def check_site_url(repo_root: Path) -> None:
             )
 
 
+def check_scope(repo_root: Path) -> None:
+    """Every setting must sit under [project]: zensical reads only that table when it exists.
+
+    zensical's parse_zensical_config replaces the whole document with config["project"], so a
+    top-level [[nav]] or [markdown_extensions] is silently dropped and the defaults apply.
+    """
+    cfg = repo_root / "docs" / "zensical.toml"
+    if not cfg.exists():
+        return
+    try:
+        data = tomllib.loads(cfg.read_text())
+    except tomllib.TOMLDecodeError as e:
+        fail("scope", str(cfg), f"not valid TOML: {e}")
+        return
+    if "project" not in data:
+        fail("scope", str(cfg), "no [project] table")
+        return
+    for key in sorted(k for k in data if k != "project"):
+        hint = f"move it under [project] (e.g. [project.{key}])"
+        if key == "markdown_extensions":
+            hint = (
+                "delete it, or move it under [project] knowing a [project.markdown_extensions] "
+                "table replaces zensical's default extension list rather than adding to it"
+            )
+        fail("scope", str(cfg), f"top-level `{key}` is ignored by zensical; {hint}")
+
+
 def check_theme_baseline(repo_root: Path) -> None:
     cfg = repo_root / "docs" / "zensical.toml"
     if not cfg.exists():
@@ -353,6 +381,7 @@ def main() -> int:
     args = parser.parse_args()
     check_pin(args.repo_root)
     check_palette(args.repo_root)
+    check_scope(args.repo_root)
     check_theme_baseline(args.repo_root)
     check_layout(args.repo_root)
     check_workflows(args.repo_root)

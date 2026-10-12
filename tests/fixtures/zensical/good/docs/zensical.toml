@@ -35,18 +35,3 @@ accent = "indigo"
 [project.theme.palette.toggle]
 icon = "material/brightness-4"
 name = "Switch to light mode"
-
-[markdown_extensions]
-admonition = {}
-toc = { permalink = true }
-
-[markdown_extensions.pymdownx]
-highlight = { anchor_linenums = true, line_spans = "__span", pygments_lang_class = true }
-inlinehilite = {}
-snippets = {}
-
-[markdown_extensions.pymdownx.superfences]
-# Table form (NOT inline `superfences = {}`) so the custom fence actually registers.
-# Enables ```mermaid blocks to render in the built zensical site; the Material theme
-# auto-injects mermaid.js (from the unpkg CDN at runtime — needs browser network access).
-custom_fences = [{ name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }]

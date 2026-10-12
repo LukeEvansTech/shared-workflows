@@ -4,11 +4,16 @@
 The canonical standard historically shipped the INLINE form `superfences = {}`
 under [markdown_extensions.pymdownx], which silently does NOT register custom
 fences — so ```mermaid blocks pass through unrendered on the built site. This
-script rewrites that to the TABLE form with a mermaid custom_fence:
+script rewrites that to the TABLE form with a mermaid custom_fence, under
+[project] because zensical ignores every table outside it:
 
-    [markdown_extensions.pymdownx.superfences]
+    [project.markdown_extensions.pymdownx.superfences]
     custom_fences = [{ name = "mermaid", class = "mermaid",
                        format = "pymdownx.superfences.fence_code_format" }]
+
+A config with no [project.markdown_extensions] already renders mermaid: zensical's
+default extension list includes this fence, and adding any extension table would
+replace that whole list. Such configs are left alone.
 
 Verified (2026-06-16, zensical 0.0.45): the table form makes the block build to
 <pre class="mermaid"> and the Material theme auto-injects mermaid.js (fetched
@@ -37,7 +42,9 @@ CUSTOM_FENCES = (
     'custom_fences = [{ name = "mermaid", class = "mermaid", '
     'format = "pymdownx.superfences.fence_code_format" }]'
 )
-TABLE_BLOCK = "\n[markdown_extensions.pymdownx.superfences]\n" + CUSTOM_FENCES + "\n"
+TABLE_BLOCK = (
+    "\n[project.markdown_extensions.pymdownx.superfences]\n" + CUSTOM_FENCES + "\n"
+)
 
 
 def gh(args):
@@ -46,7 +53,10 @@ def gh(args):
 
 def already_enabled(text: str) -> bool:
     data = tomllib.loads(text)
-    sf = data.get("markdown_extensions", {}).get("pymdownx", {}).get("superfences", {})
+    if "markdown_extensions" not in data.get("project", {}):
+        return True  # zensical's defaults include the mermaid fence
+    md = data["project"]["markdown_extensions"]
+    sf = md.get("pymdownx", {}).get("superfences", {})
     return isinstance(sf, dict) and bool(sf.get("custom_fences"))
 
 

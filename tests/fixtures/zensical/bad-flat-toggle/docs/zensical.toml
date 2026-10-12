@@ -32,11 +32,11 @@ accent = "indigo"
 toggle_icon = "material/brightness-4"
 toggle_name = "Switch to light mode"
 
-[markdown_extensions]
+[project.markdown_extensions]
 admonition = {}
 toc = { permalink = true }
 
-[markdown_extensions.pymdownx]
+[project.markdown_extensions.pymdownx]
 highlight = { anchor_linenums = true, line_spans = "__span", pygments_lang_class = true }
 inlinehilite = {}
 snippets = {}
