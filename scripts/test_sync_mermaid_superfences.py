@@ -91,3 +91,11 @@ def test_dotted_superfences_key_is_replaced():
     )
     assert out is not None
     assert already_enabled(out) is True
+
+
+def test_non_mermaid_custom_fence_is_not_enabled():
+    cfg = (
+        "[project]\n\n[project.markdown_extensions.pymdownx.superfences]\n"
+        'custom_fences = [{ name = "plantuml", class = "plantuml" }]\n'
+    )
+    assert already_enabled(cfg) is False

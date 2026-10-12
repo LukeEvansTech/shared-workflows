@@ -68,7 +68,8 @@ def already_enabled(text: str) -> bool:
     if not isinstance(md, dict):
         raise ValueError("markdown_extensions is a list; edit it by hand")
     sf = md.get("pymdownx", {}).get("superfences", {})
-    return isinstance(sf, dict) and bool(sf.get("custom_fences"))
+    fences = sf.get("custom_fences", []) if isinstance(sf, dict) else []
+    return any(isinstance(f, dict) and f.get("name") == "mermaid" for f in fences)
 
 
 def enable_mermaid(text: str) -> str | None:

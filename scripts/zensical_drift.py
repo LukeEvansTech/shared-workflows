@@ -205,10 +205,17 @@ def check_scope(repo_root: Path) -> None:
         fail("scope", str(cfg), "no [project] table")
         return
     for key in sorted(k for k in data if k != "project"):
-        header = (
-            f"[[project.{key}]]" if isinstance(data[key], list) else f"[project.{key}]"
-        )
-        hint = f"move it under [project] (e.g. {header})"
+        value = data[key]
+        if isinstance(value, dict):
+            hint = f"move it under [project] as [project.{key}]"
+        elif (
+            isinstance(value, list)
+            and value
+            and all(isinstance(v, dict) for v in value)
+        ):
+            hint = f"move it under [project] as [[project.{key}]]"
+        else:
+            hint = f"move the `{key} = ...` line into the [project] table"
         if key == "markdown_extensions":
             hint = (
                 "delete it, or move it under [project] knowing a [project.markdown_extensions] "
