@@ -9,9 +9,9 @@
 
 ## Goal
 
-Define one canonical shape for every zensical docs site across the 18 repos — config, theme, deploy workflow, lint workflow, Renovate config, Pages settings — and a drift-check mechanism that fails PRs when a repo falls out of standard.
+Define one canonical shape for every zensical docs site across the 18 repos — config, theme, deploy workflow, lint workflow, Renovate config, Pages settings — and a drift-check mechanism that fails PRs when a repository falls out of standard.
 
-The standard enforces *structure* (config keys, workflow filenames, action versioning, palette block, deploy mechanism). It stays agnostic on *visuals* (primary/accent colour, custom CSS, OOTB zensical theming is fine).
+The standard enforces _structure_ (config keys, workflow filenames, action versioning, palette block, deploy mechanism). It stays agnostic on _visuals_ (primary/accent colour, custom CSS, OOTB zensical theming is fine).
 
 ---
 
@@ -22,11 +22,11 @@ The standard enforces *structure* (config keys, workflow filenames, action versi
 - Touching project-specific test workflows (e.g., `lgwebos-lint.yml` which is shellcheck/bats, not docs lint).
 - Migrating mkdocs-material — already complete before this work; only the version pin needed updating, done 2026-05-26.
 - Adding `.editorconfig`, `CODEOWNERS`, PR templates — these affect more than just docs.
-- Auto-fixing existing markdown lint / link-check / Vale findings as part of rollout (soft-launched first; flip to hard once each repo is clean).
+- Autofixing existing Markdown lint / link-check / Vale findings as part of rollout (soft-launched first; flip to hard once each repository is clean).
 
 ---
 
-## Repo categorization
+## Repository categorization
 
 After disabling Pages on 4 private repos on 2026-05-26, the 18 repos split into:
 
@@ -46,7 +46,7 @@ Three pieces; nothing else.
 
 ### 1. `shared-workflows` (source of truth)
 
-```
+```text
 shared-workflows/.github/workflows/
 ├── super-linter.yml          (EXISTS — markdown/yaml/general lint; called by 13 repos already)
 ├── security-scans.yml        (EXISTS — Checkov + Trivy)
@@ -67,7 +67,7 @@ shared-workflows/scripts/
 
 ### 2. Per-repo files (all 18)
 
-```
+```text
 <repo>/
 ├── docs/
 │   ├── zensical.toml         (per-repo, conforms to canonical palette/theme block)
@@ -118,40 +118,34 @@ scheme = "slate"
 icon = "material/brightness-4"
 name = "Switch to light mode"
 
-# Markdown extensions baseline
-[markdown_extensions]
-admonition = {}
-toc = { permalink = true }
-
-[markdown_extensions.pymdownx]
-highlight = { anchor_linenums = true, line_spans = "__span", pygments_lang_class = true }
-inlinehilite = {}
-snippets = {}
-superfences = {}
+# Markdown extensions: no table. zensical's default list (admonition, footnotes,
+# toc permalinks, highlight, tabbed, tasklist, mermaid fences and more) applies.
+# A [project.markdown_extensions] table replaces that whole list, and a top-level
+# [markdown_extensions] table is ignored (the drift check's scope rule fails it).
 ```
 
 ### Required-but-per-repo (drift check verifies presence only)
 
-| Field | Notes |
-|---|---|
-| `project.site_name` | Free text |
-| `project.site_description` | Free text |
-| `project.site_author` | Free text |
-| `project.site_url` | Drift check enforces lowercase host + no `lukevanstech` typo |
-| `project.copyright` | Free text |
-| `project.repo_url` | |
-| `project.repo_name` | |
-| `project.edit_uri` | Conventionally `"edit/main/docs/docs/"` reflecting universal layout |
-| `[project.theme.icon].repo` | Typically `"fontawesome/brands/github"` |
-| `[[nav]]` | Free per-repo; not inspected |
+| Field                       | Notes                                                               |
+| --------------------------- | ------------------------------------------------------------------- |
+| `project.site_name`         | Free text                                                           |
+| `project.site_description`  | Free text                                                           |
+| `project.site_author`       | Free text                                                           |
+| `project.site_url`          | Drift check enforces lowercase host + no `lukevanstech` typo        |
+| `project.copyright`         | Free text                                                           |
+| `project.repo_url`          |                                                                     |
+| `project.repo_name`         |                                                                     |
+| `project.edit_uri`          | Conventionally `"edit/main/docs/docs/"` reflecting universal layout |
+| `[project.theme.icon].repo` | Typically `"fontawesome/brands/github"`                             |
+| `[[project.nav]]`           | Free per-repo; not inspected                                        |
 
 ### Optional (allowed, not required)
 
-| Field | When |
-|---|---|
-| `project.generator = false` | Hides "Made with zensical" footer; OOTB default is acceptable |
-| `project.extra_css = [...]` | When the repo has its own brand CSS |
-| `primary` / `accent` in palette entries | Per-repo colour choice; both present or both absent |
+| Field                                   | When                                                          |
+| --------------------------------------- | ------------------------------------------------------------- |
+| `project.generator = false`             | Hides "Made with zensical" footer; OOTB default is acceptable |
+| `project.extra_css = [...]`             | When the repository has its own brand CSS                     |
+| `primary` / `accent` in palette entries | Per-repo colour choice; both present or both absent           |
 
 ### Forbidden (drift check fails)
 
@@ -172,16 +166,16 @@ Reusable workflow. Multiple jobs; caller controls which run via inputs. All inne
 
 ### Inputs
 
-| Input | Type | Default | Purpose |
-|---|---|---|---|
-| `publish` | bool | `true` | Run the deploy job. `false` for build-only repos. |
-| `python-version` | string | `"3.14"` | |
-| `working-directory` | string | `"docs"` | |
-| `link-check` | bool | `true` | Run lychee against built site. |
-| `link-check-soft-launch` | bool | `true` | Lychee warnings only initially. |
-| `vale` | bool | `false` | Opt-in prose linting. |
-| `vale-soft-launch` | bool | `true` | Vale warnings only initially. |
-| `strict` | bool | `true` | Pass `--strict` to `zensical build`. |
+| Input                    | Type   | Default  | Purpose                                           |
+| ------------------------ | ------ | -------- | ------------------------------------------------- |
+| `publish`                | bool   | `true`   | Run the deploy job. `false` for build-only repos. |
+| `python-version`         | string | `"3.14"` |                                                   |
+| `working-directory`      | string | `"docs"` |                                                   |
+| `link-check`             | bool   | `true`   | Run lychee against built site.                    |
+| `link-check-soft-launch` | bool   | `true`   | Lychee warnings only initially.                   |
+| `vale`                   | bool   | `false`  | Opt-in prose linting.                             |
+| `vale-soft-launch`       | bool   | `true`   | Vale warnings only initially.                     |
+| `strict`                 | bool   | `true`   | Pass `--strict` to `zensical build`.              |
 
 ### Jobs
 
@@ -201,7 +195,7 @@ Reusable workflow. Multiple jobs; caller controls which run via inputs. All inne
 
 3. **`prose`** — if `vale: true`, depends on `build`.
    - `errata-ai/vale-action@<sha>`
-   - Reads `.vale.ini` from repo root
+   - Reads `.vale.ini` from repository root
    - `continue-on-error: ${{ inputs.vale-soft-launch }}`
 
 4. **`deploy`** — if `publish: true` AND triggered by `push` to `main`, depends on `build` (and on `link-check` if hard-failed).
@@ -243,7 +237,7 @@ Build-only repos override `publish: false`.
 
 ## Section 3 — `shared-workflows/.github/workflows/zensical-drift-check.yml`
 
-PR-blocking reusable workflow. Runs the `scripts/zensical_drift.py` checker against the calling repo. Never deploys.
+PR-blocking reusable workflow. Runs the `scripts/zensical_drift.py` checker against the calling repository. Never deploys.
 
 ### Checks (each emits a separate annotated step)
 
@@ -259,7 +253,7 @@ PR-blocking reusable workflow. Runs the `scripts/zensical_drift.py` checker agai
 10. **`site_url` hygiene** — lowercase host, no `lukevanstech` typo. Warns on `localhost` (acceptable for build-only).
 11. **`.markdownlint.yml` hash** — must match the canonical `shared-workflows/templates/.markdownlint.yml`. Drifted repos fail.
 
-### Inputs
+### Drift-check inputs
 
 - `allow-build-type-legacy` (bool, default `false`) — escape hatch for repos mid-migration.
 - `allow-no-pages` (bool, default `false`) — for build-only repos, marks check 8 as N/A.
@@ -272,7 +266,8 @@ name: Docs Standard Check
 
 on:
   pull_request:
-    paths: ["docs/**", ".github/workflows/**", "renovate.json", ".markdownlint.yml"]
+    paths:
+      ["docs/**", ".github/workflows/**", "renovate.json", ".markdownlint.yml"]
 
 permissions:
   contents: read
@@ -313,9 +308,10 @@ jobs:
 ```
 
 **Current state** (rollout targets):
+
 - 13 repos already have this exact pattern. Drift check verifies SHA-pinning and `soft-launch: false`.
 - 2 repos missing entirely (col-entra-id, acinfinity-exporter) — add during Phase 2.
-- 1 repo has non-canonical filename (defender-device-control-unmanaged's `ddcu-lint.yml`) — rename during Phase 2.
+- 1 repository has non-canonical filename (defender-device-control-unmanaged's `ddcu-lint.yml`) — rename during Phase 2.
 - 4 repos use tag-pinned actions instead of SHA — Renovate will fix automatically after first run; pre-bump if convenient.
 - `lgwebos`'s separate `lgwebos-lint.yml` (shellcheck/bats project tests) is **not** a docs lint workflow — explicitly out of scope, left alone.
 
@@ -323,29 +319,26 @@ jobs:
 
 ## Section 5 — Auxiliary configs
 
-### `renovate.json` (every repo)
+### `renovate.json` (every repository)
 
 ```json
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests"
-  ]
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"]
 }
 ```
 
 `helpers:pinGitHubActionDigests` is what converts tag-pinned actions to SHA-pinned and keeps them updated. Drift check verifies both extensions present. Repos may add further presets per local need.
 
-### `.markdownlint.yml` (every repo, at repo root)
+### `.markdownlint.yml` (every repository, at repository root)
 
 Canonical content lives at `shared-workflows/templates/.markdownlint.yml`:
 
 ```yaml
 default: true
-MD013: false        # line length — disabled for prose
-MD033: false        # inline HTML — allowed (zensical/material uses some inline HTML)
-MD041: false        # first-line h1 — disabled (zensical uses page title from nav)
+MD013: false # line length — disabled for prose
+MD033: false # inline HTML — allowed (zensical/material uses some inline HTML)
+MD041: false # first-line h1 — disabled (zensical uses page title from nav)
 MD024:
   siblings_only: true
 ```
@@ -373,7 +366,7 @@ Microsoft.HeadingPunctuation = NO
 
 `.vale/styles/` populated by the vale-action during CI. `.vale/styles/docs/` holds per-repo product/tech vocab.
 
-Phased: every repo starts with Vale disabled. Once a repo's prose is clean, opt in with `vale: true, vale-soft-launch: true`. Flip to hard-fail once clean.
+Phased: every repository starts with Vale disabled. Once a repo's prose is clean, opt in with `vale: true, vale-soft-launch: true`. Flip to hard-fail once clean.
 
 ---
 
@@ -384,6 +377,7 @@ Six phases. Each phase has a verification step and an explicit rollback.
 ### Phase 0 — Prep in `shared-workflows`
 
 Add to `LukeEvansTech/shared-workflows`:
+
 1. `templates/.markdownlint.yml`
 2. `templates/docs.yml`, `templates/lint.yml`, `templates/docs-standard-check.yml`, `templates/renovate.json`
 3. `.github/workflows/zensical.yml` (Section 2)
@@ -400,6 +394,7 @@ Add to `LukeEvansTech/shared-workflows`:
 Chosen because it's been touched most recently (2026-05-26 commits), public Pages, no gh-pages legacy. Apply all standard files.
 
 **Verify:**
+
 - New `Docs` workflow succeeds end-to-end via the reusable.
 - Live site at `https://lukeevanstech.github.io/M365LabelSync/` still renders; dark-mode toggle still present.
 - Drift check passes on a synthetic PR that conforms.
@@ -412,7 +407,7 @@ Chosen because it's been touched most recently (2026-05-26 commits), public Page
 
 The 12 Pages-publishing repos minus the canary minus the 3 gh-pages-branch repos:
 
-```
+```text
 copilot-kql-library, acinfinity-exporter, entra-ca-templates, maester-copilot-tests,
 copilot-security-checker, purview-content-explorer-helpers, purview-dlp-export, dotfiles
 ```
@@ -422,19 +417,21 @@ copilot-security-checker, purview-content-explorer-helpers, purview-dlp-export, 
 Same file changes as the canary, applied in parallel.
 
 **Special cases:**
+
 - `acinfinity-exporter` — add `lint.yml` (currently missing). Re-pin its tag-pinned actions to SHA.
 
-**Verify per repo:** push triggers new Docs workflow, succeeds, site renders, drift check passes on synthetic PR.
+**Verify per repository:** push triggers new Docs workflow, succeeds, site renders, drift check passes on synthetic PR.
 
-**Rollback per repo:** revert the four file commits.
+**Rollback per repository:** revert the four file commits.
 
 ### Phase 3 — Migrate the 3 gh-pages-branch repos
 
-```
+```text
 PSReddit, purview-content-explorer-export, defender-device-control-unmanaged
 ```
 
-Per repo:
+Per repository:
+
 1. Switch Pages `build_type: legacy` → `workflow` via API.
 2. Replace existing deploy workflow with canonical `docs.yml`.
 3. Trigger `Docs` workflow via `workflow_dispatch`.
@@ -447,7 +444,7 @@ Per repo:
 
 ### Phase 4 — Build-only repos
 
-```
+```text
 lgwebos, stwt-m365-consolidation, col-entra-id, github-infrastructure,
 network-ops, terraform-dns
 ```
@@ -468,14 +465,14 @@ The 4 newly-disabled-Pages repos have their old deploy workflows already neutere
 
 **Add lint.yml to col-entra-id** during this phase.
 
-**Verify per repo:** push triggers Docs workflow, build job succeeds, deploy job skipped (`publish: false`), drift check passes.
+**Verify per repository:** push triggers Docs workflow, build job succeeds, deploy job skipped (`publish: false`), drift check passes.
 
 ### Phase 5 — Phased linter rollout
 
 After all 18 are on the standard:
 
-1. **Week 1:** every repo has `link-check: true, link-check-soft-launch: true`. Triage warnings.
-2. **Week 2:** flip `link-check-soft-launch: false` per repo as warnings clear. Some repos may need `.lycheeignore` for flaky externals.
+1. **Week 1:** every repository has `link-check: true, link-check-soft-launch: true`. Triage warnings.
+2. **Week 2:** flip `link-check-soft-launch: false` per repository as warnings clear. Some repos may need `.lycheeignore` for flaky externals.
 3. **Week 3+ (optional):** opt repos into Vale by adding `.vale.ini` and `vale: true, vale-soft-launch: true`. Once clean, flip to hard-fail.
 
 ### Phase 6 — Validation & sign-off
@@ -495,12 +492,12 @@ After all 18 are on the standard:
 
 ## Why these choices
 
-| Choice | Reason |
-|---|---|
-| Reusable workflow in shared-workflows | Anchors a single source of truth; works with existing super-linter pattern; Renovate digest helper covers update flow |
-| Exact-version pin `zensical==X.Y.Z` | zensical is alpha (0.0.x), releasing every 3-7 days × 8 transitive deps. Hash-pinning would churn Renovate. Docs-build tooling, not runtime — modest supply-chain blast radius. |
-| Actions-based deploy for everyone | Modern pattern; `actions/deploy-pages` requires `build_type: workflow`; cleaner artifact handling than gh-pages branch |
-| SHA-pinned action versions | Matches user's stated preference; security-correct; Renovate `helpers:pinGitHubActionDigests` automates |
+| Choice                                         | Reason                                                                                                                                                                                    |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reusable workflow in shared-workflows          | Anchors a single source of truth; works with existing super-linter pattern; Renovate digest helper covers update flow                                                                     |
+| Exact-version pin `zensical==X.Y.Z`            | zensical is alpha (0.0.x), releasing every 3-7 days × 8 transitive deps. Hash-pinning would churn Renovate. Docs-build tooling, not runtime — modest supply-chain blast radius.           |
+| Actions-based deploy for everyone              | Modern pattern; `actions/deploy-pages` requires `build_type: workflow`; cleaner artifact handling than gh-pages branch                                                                    |
+| SHA-pinned action versions                     | Matches user's stated preference; security-correct; Renovate `helpers:pinGitHubActionDigests` automates                                                                                   |
 | Nested `[project.theme.palette.toggle]` syntax | The flat `toggle_icon`/`toggle_name` keys parse as valid TOML but don't render the visible toggle button in zensical compat mode. Verified empirically across all 18 sites on 2026-05-26. |
-| Drift check as PR-blocking, not weekly audit | Catches violations at introduction time, when context is freshest; lower-friction than scheduled issue-opening |
-| Soft-launch lint additions | Avoids a flood of red PRs on existing content; gives each repo time to clear warnings before hard-fail |
+| Drift check as PR-blocking, not weekly audit   | Catches violations at introduction time, when context is freshest; lower-friction than scheduled issue-opening                                                                            |
+| Soft-launch lint additions                     | Avoids a flood of red PRs on existing content; gives each repository time to clear warnings before hard-fail                                                                              |

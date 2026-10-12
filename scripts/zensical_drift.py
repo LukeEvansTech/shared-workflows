@@ -205,7 +205,10 @@ def check_scope(repo_root: Path) -> None:
         fail("scope", str(cfg), "no [project] table")
         return
     for key in sorted(k for k in data if k != "project"):
-        hint = f"move it under [project] (e.g. [project.{key}])"
+        header = (
+            f"[[project.{key}]]" if isinstance(data[key], list) else f"[project.{key}]"
+        )
+        hint = f"move it under [project] (e.g. {header})"
         if key == "markdown_extensions":
             hint = (
                 "delete it, or move it under [project] knowing a [project.markdown_extensions] "

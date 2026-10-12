@@ -65,6 +65,7 @@ def test_unscoped_tables_fail():
     assert "[scope]" in out
     assert "top-level `markdown_extensions`" in out
     assert "top-level `nav`" in out
+    assert "[[project.nav]]" in out  # array of tables keeps its shape
 
 
 def test_good_fixture_passes_palette_only():

@@ -52,10 +52,21 @@ def gh(args):
 
 
 def already_enabled(text: str) -> bool:
+    """True when the config already renders mermaid fences.
+
+    Raises ValueError for a config this script cannot judge safely: tables outside
+    [project] (zensical ignores them; fix the scope first) or the list form of
+    markdown_extensions.
+    """
     data = tomllib.loads(text)
+    stray = sorted(k for k in data if k != "project")
+    if stray:
+        raise ValueError(f"top-level {stray} outside [project]; fix the scope first")
     if "markdown_extensions" not in data.get("project", {}):
         return True  # zensical's defaults include the mermaid fence
     md = data["project"]["markdown_extensions"]
+    if not isinstance(md, dict):
+        raise ValueError("markdown_extensions is a list; edit it by hand")
     sf = md.get("pymdownx", {}).get("superfences", {})
     return isinstance(sf, dict) and bool(sf.get("custom_fences"))
 
@@ -67,10 +78,15 @@ def enable_mermaid(text: str) -> str | None:
     """
     if already_enabled(text):
         return None
-    # Drop the inline `superfences = ...` key line(s) under pymdownx, then append
+    # Drop the inline `superfences = ...` key line(s) under pymdownx (or the dotted
+    # `pymdownx.superfences = ...` under markdown_extensions), then append
     # the fully-qualified table at EOF (TOML headers are absolute, so position is
     # irrelevant and EOF append can't capture later bare keys).
-    lines = [ln for ln in text.splitlines() if not re.match(r"\s*superfences\s*=", ln)]
+    lines = [
+        ln
+        for ln in text.splitlines()
+        if not re.match(r"\s*(pymdownx\.)?superfences\s*=", ln)
+    ]
     new = "\n".join(lines).rstrip() + "\n" + TABLE_BLOCK
     tomllib.loads(new)  # validate; raises on malformed result
     if not already_enabled(new):
