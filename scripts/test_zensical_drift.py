@@ -26,6 +26,15 @@ def run_drift(fixture_name: str, *extra_args: str) -> subprocess.CompletedProces
     )
 
 
+def run_drift_root(root: Path) -> subprocess.CompletedProcess:
+    """Run zensical_drift.py against an arbitrary repository root."""
+    return subprocess.run(
+        ["python3", str(SCRIPT), "--repo-root", str(root)],
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_loose_pin_fails():
     result = run_drift("bad-loose-pin")
     assert result.returncode != 0
@@ -56,6 +65,16 @@ def test_no_palette_fails():
     out = result.stdout + result.stderr
     assert "[palette]" in out
     assert "2 [[project.theme.palette]] entries" in out or "need at least" in out
+
+
+def test_unscoped_tables_fail():
+    result = run_drift("bad-scope")
+    assert result.returncode != 0
+    out = result.stdout + result.stderr
+    assert "[scope]" in out
+    assert "top-level `markdown_extensions`" in out
+    assert "top-level `nav`" in out
+    assert "[[project.nav]]" in out  # array of tables keeps its shape
 
 
 def test_good_fixture_passes_palette_only():
@@ -304,3 +323,16 @@ def test_strip_jsonc_keeps_urls():
         '{ $schema: "https://example.com/x.json" }'
     )
     assert "https://example.com/x.json" in url
+
+
+def test_scope_hint_keeps_scalar_keys_as_assignments(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "zensical.toml").write_text(
+        'site_name = "X"\n\n[project]\nsite_url = "https://x/"\n'
+    )
+    out = run_drift_root(tmp_path)
+    assert (
+        "move the `site_name = ...` line into the [project] table"
+        in out.stdout + out.stderr
+    )
