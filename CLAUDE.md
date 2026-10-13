@@ -38,6 +38,12 @@ caller repo: .github/workflows/{lint,docs,docs-standard-check,renovate-review}.y
 - Reads **per-repo linter configs** from the caller's `.github/linters/` (e.g. `.tflint.hcl`, `.ansible-lint.yml`, `.codespellrc`).
 - **Ansible repos:** if the caller has `ansible/requirements.yml`, a step installs collections with `ansible-galaxy ... -p ansible/collections --force` so ansible-lint's `--syntax-check` can resolve them. `--force` is required because some collections ship preinstalled on the runner and would otherwise be skipped (not copied into the workspace the super-linter container mounts).
 - `filter-regex-exclude` default excludes `collections/` so vendored collection files aren't linted.
+- **Squash-merge pushes are skipped** unless a caller sets `lint-merged-pushes: true`: the
+  job-level `if:` drops a push whose head commit GitHub committed (`web-flow`) with a `(#N)`
+  reference, because the PR already linted those files. A web-editor commit straight to `main`
+  that mentions `(#N)` would also be skipped; rulesets require a PR on `main`, so that takes a
+  bypass, and checking the PR association would itself cost a hosted job per push. Every
+  reusable job carries a `timeout-minutes` input so a hang can't bill GitHub's 360-minute default.
 
 ### renovate-review.yml (Claude reviews Renovate PRs)
 

@@ -57,10 +57,18 @@ on:
           group, so the same label works estate-wide there.
         type: string
         default: ubuntu-latest
+      timeout-minutes:
+        description: >-
+          Job timeout in minutes. Applies to each job (build, link check, prose, deploy).
+          Without one, a hung job runs to GitHub's 360-minute default, which on a
+          private repository bills all six hours (lgwebos, 2026-10-01).
+        type: number
+        default: 20
 
 jobs:
   build:
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -97,6 +105,7 @@ jobs:
     needs: build
     if: inputs.link-check
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -147,6 +156,7 @@ jobs:
     needs: build
     if: inputs.vale
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -166,6 +176,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main'
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

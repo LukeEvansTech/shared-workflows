@@ -64,6 +64,13 @@ on:
           group, so the same label works estate-wide there.
         type: string
         default: ubuntu-latest
+      timeout-minutes:
+        description: >-
+          Job timeout in minutes. Applies to each scan job.
+          Without one, a hung job runs to GitHub's 360-minute default, which on a
+          private repository bills all six hours (lgwebos, 2026-10-01).
+        type: number
+        default: 30
 
 # Top-level: read-only by default. Each job widens as needed.
 # (Checkov CKV2_GHA_1)
@@ -75,6 +82,7 @@ jobs:
     if: ${{ inputs.enable-checkov }}
     name: Checkov (IaC Security)
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
       security-events: write
@@ -130,6 +138,7 @@ jobs:
     if: ${{ inputs.enable-trivy }}
     name: Trivy (Filesystem & Secret Scan)
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
       security-events: write

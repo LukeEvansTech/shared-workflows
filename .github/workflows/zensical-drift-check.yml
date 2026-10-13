@@ -29,10 +29,18 @@ on:
           group, so the same label works estate-wide there.
         type: string
         default: ubuntu-latest
+      timeout-minutes:
+        description: >-
+          Job timeout in minutes. The check reads files and runs one script.
+          Without one, a hung job runs to GitHub's 360-minute default, which on a
+          private repository bills all six hours (lgwebos, 2026-10-01).
+        type: number
+        default: 15
 
 jobs:
   drift:
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
     steps:

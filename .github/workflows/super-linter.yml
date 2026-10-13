@@ -78,10 +78,39 @@ on:
           group, so the same label works estate-wide there.
         type: string
         default: ubuntu-latest
+      timeout-minutes:
+        description: >-
+          Job timeout in minutes. The slowest observed lint was 11 minutes
+          (network-ops on ARC, September 2026); 30 leaves room for a cold image pull.
+          Without one, a hung job runs to GitHub's 360-minute default, which on a
+          private repository bills all six hours (lgwebos, 2026-10-01).
+        type: number
+        default: 30
+      lint-merged-pushes:
+        description: >-
+          Also lint the push to the default branch that a squash-merged pull
+          request produces. Default false: that commit's changed files were
+          already linted on the pull request, so linting them again doubles
+          lint minutes for nothing. Detected as a push whose head commit was
+          committed by GitHub (`web-flow`) with a ` (#N)` pull request
+          reference in its message; direct pushes are still linted. A web-editor
+          commit straight to the default branch that mentions (#N) looks the same
+          and is skipped too; the estate's rulesets require a pull request there.
+        type: boolean
+        default: false
 
 jobs:
   lint:
+    # Skip only a squash-merge push (see lint-merged-pushes). Everything else, direct pushes
+    # included, is linted as before.
+    if: >-
+      inputs.lint-merged-pushes
+      || github.event_name != 'push'
+      || !contains(github.event.head_commit.message, ' (#')
+      || (github.event.head_commit.committer.username != 'web-flow'
+          && github.event.head_commit.committer.email != 'noreply@github.com')
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
       statuses: write
