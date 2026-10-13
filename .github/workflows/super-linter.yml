@@ -93,7 +93,9 @@ on:
           already linted on the pull request, so linting them again doubles
           lint minutes for nothing. Detected as a push whose head commit was
           committed by GitHub (`web-flow`) with a ` (#N)` pull request
-          reference in its message; direct pushes are still linted.
+          reference in its message; direct pushes are still linted. A web-editor
+          commit straight to the default branch that mentions (#N) looks the same
+          and is skipped too; the estate's rulesets require a pull request there.
         type: boolean
         default: false
 
