@@ -51,6 +51,7 @@ jobs:
   retag:
     name: Move v1
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       # The only write scope in this repository's own CI: this job pushes a tag.
       contents: write

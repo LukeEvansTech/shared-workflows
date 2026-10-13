@@ -55,13 +55,15 @@ jobs:
 
 ### Inputs
 
-| Input                   | Type    | Default                                           | Purpose                                                                                                            |
-| ----------------------- | ------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `default-branch`        | string  | `main`                                            | Branch super-linter diffs against                                                                                  |
-| `validate-all-codebase` | boolean | `false`                                           | Lint everything, not just changed files                                                                            |
-| `soft-launch`           | boolean | `true`                                            | When `true`, lint failures don't fail the workflow                                                                 |
-| `filter-regex-exclude`  | string  | (vendor/node_modules/.terraform/.venv/dist/build) | Paths to exclude                                                                                                   |
-| `runner`                | string  | `ubuntu-latest`                                   | Runner label to execute on. Set to an ARC runner scale set name to run self-hosted (free minutes on private repos) |
+| Input                   | Type    | Default                                           | Purpose                                                                                                                                               |
+| ----------------------- | ------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default-branch`        | string  | `main`                                            | Branch super-linter diffs against                                                                                                                     |
+| `validate-all-codebase` | boolean | `false`                                           | Lint everything, not just changed files                                                                                                               |
+| `soft-launch`           | boolean | `true`                                            | When `true`, lint failures don't fail the workflow                                                                                                    |
+| `filter-regex-exclude`  | string  | (vendor/node_modules/.terraform/.venv/dist/build) | Paths to exclude                                                                                                                                      |
+| `runner`                | string  | `ubuntu-latest`                                   | Runner label to execute on. Set to an ARC runner scale set name to run self-hosted (free minutes on private repos)                                    |
+| `timeout-minutes`       | number  | `30`                                              | Job timeout. Without one a hung job runs to GitHub's 360-minute default                                                                               |
+| `lint-merged-pushes`    | boolean | `false`                                           | Also lint the push a squash-merged PR makes to the default branch. Off by default: the PR already linted those files. Direct pushes are always linted |
 
 ### Examples
 
