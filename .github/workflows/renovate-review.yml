@@ -90,6 +90,17 @@ on:
           `grep -qwE` against the PR's labels.
         type: string
         default: type/digest|renovate/github-action
+      rerun-label:
+        description: >-
+          PR label that forces a fresh review. While it is on the PR, the
+          fingerprint gate does not reuse an earlier verdict and the reviewer
+          skips its "already reviewed" pre-check; the run removes the label once
+          a review has been attempted. Use it when something outside the PR diff
+          has changed (a fix landed on the base branch, new upstream release
+          notes) and the earlier verdict should be re-examined. The caller must
+          also trigger on `labeled` for adding the label to start a run.
+        type: string
+        default: renovate-review/rerun
       runner:
         description: >-
           Runner label the job executes on. Defaults to `ubuntu-latest`
@@ -144,9 +155,14 @@ jobs:
           # user.login from the webhook payload is "renovate[bot]"; gh pr view returns "app/renovate".
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           UNGATED: ${{ inputs.ungated-labels }}
+          RERUN_LABEL: ${{ inputs.rerun-label }}
         run: |
           pr_json=$(gh pr view "$PR" --json labels)
           labels=$(echo "$pr_json" | jq -r '[.labels[].name] | join(" ")')
+          # Read from the PR's current labels, not the event payload, so the
+          # label forces a fresh review on whichever run sees it first: the
+          # `labeled` run itself, or the run after a rebase requested below.
+          rerun=$(echo "$pr_json" | jq -r --arg l "$RERUN_LABEL" 'any(.labels[]; .name == $l)')
 
           is_renovate=false
           gated=false
@@ -167,12 +183,162 @@ jobs:
             echo "is_renovate=$is_renovate"
             echo "gated=$gated"
             echo "labels=$labels"
+            echo "rerun=$rerun"
+            echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
-          echo "author=$PR_AUTHOR labels=$labels -> is_renovate=$is_renovate gated=$gated"
+          echo "author=$PR_AUTHOR labels=$labels -> is_renovate=$is_renovate gated=$gated rerun=$rerun"
+
+      - name: Check caller workflow is current
+        id: wfdrift
+        if: steps.gate.outputs.gated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          # owner/repo/.github/workflows/<file>@<ref>. Inside a reusable
+          # workflow the github context belongs to the caller, so this names
+          # the caller's workflow file, not this one.
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -uo pipefail
+          # Renovate here rebases only on conflict (`rebaseWhen: conflicted`),
+          # so an older PR keeps whatever copy of the calling workflow existed
+          # when its branch was cut. claude-code-action refuses to run unless
+          # that workflow matches the default branch ("Workflow validation
+          # failed ... identical content"), skips itself as a success, and the
+          # status step then fails the PR for "finished without posting a
+          # verdict" - for a reason no re-run can fix. Ask Renovate to rebase
+          # instead and post a non-verdict; the rebase push starts a fresh run.
+          #
+          # Only a branch that is merely BEHIND counts as stale: its copy must
+          # equal the merge-base copy (the PR did not change the file) and
+          # differ from the base tip. A PR that edits the workflow itself is
+          # not stale - a rebase would not change it, and ticking the box on
+          # every run would loop.
+          #
+          # Any lookup failure leaves stale=false: the review then runs exactly
+          # as it did before this check existed.
+          stale=false
+          action=""
+          wf="${CALLER_WORKFLOW_REF#*/*/}"
+          wf="${wf%@*}"
+          base_tip=$(git rev-parse -q --verify "refs/remotes/origin/${BASE_REF}^{commit}" 2>/dev/null || true)
+          if [[ -z "$wf" || -z "$base_tip" ]] || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::Could not resolve caller workflow '$wf', base '$BASE_REF' or head $HEAD_SHA locally - skipping the staleness check."
+          else
+            mb=$(git merge-base "$HEAD_SHA" "$base_tip" 2>/dev/null || true)
+            head_blob=$(git rev-parse -q --verify "${HEAD_SHA}:${wf}" 2>/dev/null || true)
+            base_blob=$(git rev-parse -q --verify "${base_tip}:${wf}" 2>/dev/null || true)
+            mb_blob=""
+            [[ -n "$mb" ]] && mb_blob=$(git rev-parse -q --verify "${mb}:${wf}" 2>/dev/null || true)
+            echo "workflow=$wf head=${head_blob:-absent} merge-base=${mb_blob:-absent} base(${BASE_REF})=${base_blob:-absent}"
+            if [[ -n "$mb" && "$head_blob" != "$base_blob" && "$head_blob" == "$mb_blob" ]]; then
+              stale=true
+            elif [[ "$head_blob" != "$base_blob" ]]; then
+              echo "::notice::This PR changes $wf itself; a rebase would not bring it in line with ${BASE_REF}, so no rebase is requested."
+            fi
+          fi
+
+          # A Renovate rebase recreates the branch from scratch, dropping any
+          # commit a person pushed onto it. Only ask for one when every commit
+          # on the branch is Renovate's own. A merge commit (an "Update branch"
+          # click) is fine only if it merged a commit already on the base
+          # branch and its tree is exactly what git merges on its own: then it
+          # brings in nothing but base-branch content, which the
+          # rebase brings in anyway. A hand-resolved conflict counts as a
+          # person's change.
+          others=""
+          if [[ "$stale" == "true" ]]; then
+            # Author AND committer: amending a Renovate commit keeps its
+            # author. Renovate commits through the API, so GitHub is the
+            # committer (noreply@github.com) on its own commits.
+            others=$(git log --no-merges --format='%ae %ce' "${mb}..${HEAD_SHA}" 2>/dev/null \
+              | grep -vxE '29139614\+renovate\[bot\]@users\.noreply\.github\.com (noreply@github\.com|29139614\+renovate\[bot\]@users\.noreply\.github\.com)' || true)
+            for m in $(git rev-list --merges "${mb}..${HEAD_SHA}" 2>/dev/null || true); do
+              auto=$(git merge-tree --write-tree "${m}^1" "${m}^2" 2>/dev/null | head -1 || true)
+              if ! git merge-base --is-ancestor "${m}^2" "$base_tip" 2>/dev/null \
+                 || [[ -z "$auto" || "$auto" != "$(git rev-parse "${m}^{tree}")" ]]; then
+                others="${others}${others:+ }merge:${m:0:12}"
+              fi
+            done
+          fi
+          if [[ "$stale" == "true" && -n "$others" ]]; then
+            action="foreign-commits"
+          elif [[ "$stale" == "true" ]]; then
+            # Touch only the Renovate rebase checkbox; leave the rest of the
+            # body byte for byte as Renovate wrote it.
+            unticked='- [ ] <!-- rebase-check -->'
+            ticked='- [x] <!-- rebase-check -->'
+            bodyf="$RUNNER_TEMP/pr-body.md"
+            # Everything above judged HEAD_SHA, which a re-run of an old run
+            # keeps even after the branch moves on. Tick the box only while
+            # that is still the PR's head, or a commit nobody checked could be
+            # rebased away.
+            live_head=$(gh pr view "$PR" --json headRefOid --jq .headRefOid 2>/dev/null || true)
+            # `--jq .body` prints the body plus one newline; the trailing `x`
+            # stops $(...) from also eating newlines that belong to the body.
+            if [[ "$live_head" != "$HEAD_SHA" ]]; then
+              action="head-moved"
+            elif body=$(gh pr view "$PR" --json body --jq .body && printf x); then
+              body="${body%x}"
+              body="${body%$'\n'}"
+            else
+              action="error"
+            fi
+            if [[ "$action" == "error" || "$action" == "head-moved" ]]; then
+              :
+            elif [[ "$body" == *"$ticked"* ]]; then
+              action="already-requested"
+            elif [[ "$body" == *"$unticked"* ]]; then
+              printf '%s' "${body/"$unticked"/"$ticked"}" > "$bodyf"
+              if gh pr edit "$PR" --body-file "$bodyf" >/dev/null; then
+                action="requested"
+              else
+                action="error"
+              fi
+            else
+              action="no-checkbox"
+            fi
+          fi
+          if [[ "$action" == "requested" || "$action" == "already-requested" ]]; then
+            echo "::notice::$wf on this branch is behind ${BASE_REF}; Renovate rebase $action. The review runs on the push the rebase makes."
+          elif [[ "$stale" == "true" ]]; then
+            # Could not (or must not) ask for a rebase. Review anyway, exactly
+            # as before this check existed: deferring here would only swap one
+            # stuck status for another.
+            echo "::warning::$wf on this branch is behind ${BASE_REF} and no Renovate rebase was requested ($action); reviewing anyway. Rebase the PR by hand if the review action refuses to run."
+            stale=false
+          fi
+          {
+            echo "stale=$stale"
+            echo "rebase=$action"
+            echo "workflow=$wf"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Mark forced re-review pending
+        # The label asks to replace the verdict the status currently carries,
+        # often a success. Withdraw it for the length of the review so nothing
+        # merges on it in the meantime; the status step below replaces this.
+        if: >-
+          steps.gate.outputs.gated == 'true'
+          && steps.gate.outputs.rerun == 'true'
+          && steps.wfdrift.outputs.stale != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api -X POST "repos/$REPO/statuses/$SHA" \
+            -f state=pending \
+            -f context=claude/renovate-review \
+            -f description="Forced re-review in progress (rerun label)" \
+            -f target_url="$RUN_URL" >/dev/null
 
       - name: Extract protected-infra blast list
         id: blast
-        if: steps.gate.outputs.gated == 'true' && inputs.blast-from-renovaterc
+        if: steps.gate.outputs.gated == 'true' && steps.wfdrift.outputs.stale != 'true' && inputs.blast-from-renovaterc
         env:
           # Must byte-match the `description` of the protected-infra packageRules
           # entry in the caller's .renovaterc.json5 — the single source of truth
@@ -240,7 +406,7 @@ jobs:
 
       - name: Select model tier
         id: model_tier
-        if: steps.gate.outputs.gated == 'true'
+        if: steps.gate.outputs.gated == 'true' && steps.wfdrift.outputs.stale != 'true'
         env:
           TITLE: ${{ github.event.pull_request.title }}
           LABELS: ${{ steps.gate.outputs.labels }}
@@ -279,12 +445,13 @@ jobs:
 
       - name: Fingerprint check
         id: fp
-        if: steps.gate.outputs.gated == 'true'
+        if: steps.gate.outputs.gated == 'true' && steps.wfdrift.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           USAGE_MARKER: "<!-- claude-renovate-usage -->"
+          RERUN: ${{ steps.gate.outputs.rerun }}
         run: |
           set -uo pipefail
           # NOTE: GitHub runs run-steps with `bash -e` (errexit), and `set -uo
@@ -377,7 +544,14 @@ jobs:
             2>/dev/null || true)
 
           skip=false
-          if [[ -n "$stored" && "$stored" == "$fingerprint" && -n "$prior" ]]; then
+          if [[ "$RERUN" == "true" ]]; then
+            # The rerun label asks for a fresh review of an unchanged diff:
+            # something outside it changed (a fix on the base branch, new
+            # upstream notes), which this fingerprint cannot see. Without this
+            # the only way past a stale "changes requested" was to close the PR
+            # and let Renovate open a new one.
+            echo "Forced re-review requested by label - not reusing the prior verdict"
+          elif [[ -n "$stored" && "$stored" == "$fingerprint" && -n "$prior" ]]; then
             skip=true
           fi
           echo "skip_claude=$skip" >> "$GITHUB_OUTPUT"
@@ -385,7 +559,7 @@ jobs:
 
       - name: Load repo context
         id: ctx
-        if: steps.gate.outputs.gated == 'true' && steps.fp.outputs.skip_claude != 'true'
+        if: steps.gate.outputs.gated == 'true' && steps.wfdrift.outputs.stale != 'true' && steps.fp.outputs.skip_claude != 'true'
         env:
           CONTEXT_FILE: ${{ inputs.context-file }}
           # Read the context from the PR's BASE commit, never the checked-out PR
@@ -421,7 +595,7 @@ jobs:
 
       - name: Validate OAuth token
         id: token_check
-        if: steps.gate.outputs.gated == 'true' && steps.fp.outputs.skip_claude != 'true'
+        if: steps.gate.outputs.gated == 'true' && steps.wfdrift.outputs.stale != 'true' && steps.fp.outputs.skip_claude != 'true'
         env:
           # Same rationale as the claude step: a deployment environment would only
           # block this per-PR automation; super-linter's pinned zizmor 1.23.1 emits
@@ -601,6 +775,7 @@ jobs:
       - id: claude
         if: >-
           steps.gate.outputs.gated == 'true'
+          && steps.wfdrift.outputs.stale != 'true'
           && steps.fp.outputs.skip_claude != 'true'
           && steps.token_check.outputs.token_state != 'invalid'
           && steps.token_check.outputs.token_state != 'rate-limited'
@@ -630,6 +805,7 @@ jobs:
             REPO: ${{ github.repository }}
             PR: #${{ github.event.pull_request.number }}
             REVIEW DEPTH: ${{ steps.model_tier.outputs.depth }}
+            FORCED RE-REVIEW: ${{ steps.gate.outputs.rerun == 'true' && 'yes' || 'no' }}
 
             ${{ steps.ctx.outputs.context }}
 
@@ -649,14 +825,40 @@ jobs:
             depth tier. Check for data migrations, CRD-compatibility breaks, and
             reconciliation-affecting changes in particular.
 
-            ## Pre-check: skip redundant re-reviews
+            ## Pre-check: earlier reviews and digest-only changes
 
-            Before doing any research, check whether claude[bot] has already reviewed this PR
-            (`gh pr view <n> --json reviews` or `gh api repos/<owner>/<repo>/pulls/<n>/reviews`). If a
-            prior review exists, compare the package version(s) in the current diff against the
-            versions mentioned in that review. If they are identical (i.e. Renovate just rebased
-            without changing versions), stop immediately without posting a new review. Only proceed
-            with a full review if the versions changed or new packages were added since the last review.
+            Every run MUST end with exactly one submitted review carrying a `**Verdict**:` line.
+            Never stop without posting one: the merge gate only accepts a verdict submitted against
+            the PR's current commit, so a silent run blocks the PR and no later run can clear it.
+
+            If FORCED RE-REVIEW above is `yes`, skip the rest of this pre-check: a person asked for a
+            fresh review because something outside the diff changed. Ignore earlier verdicts and
+            follow the full Workflow below.
+
+            Otherwise, before any research, run `gh pr diff <n>` and read claude[bot]'s earlier
+            reviews of this PR, all pages, newest last
+            (`gh api --paginate "repos/<owner>/<repo>/pulls/<n>/reviews" --jq '.[] | ...'`; a
+            DISMISSED one still counts, its verdict is in its body). Only the LATEST review that
+            carries a verdict counts as the prior verdict. Then take the FIRST case that applies:
+
+            1. **Earlier review of the same versions.** A prior review covers exactly the package
+               versions and tags in the current diff, and nothing beyond image digests or
+               rebase-moved context has changed since. That includes a digest re-pin under the same
+               tag, for example when upstream re-publishes a tag after the review. To see what
+               changed since, compare the current head with the prior review's `commit_id`
+               (`gh api "repos/<owner>/<repo>/compare/<commit_id>...<head sha>"`). Re-submit that
+               review's verdict: `--approve` if it said "Safe to merge", `--request-changes` if it
+               said "Changes required before merge" (a new digest of the same tag does not fix what
+               it found). Keep the body short: its `### [package]: vOLD → vNEW` heading and verdict
+               line, what changed since (a digest re-pin of the same tag, or only a rebase), and a
+               link to the earlier review.
+            2. **Digest-only change under an unchanged tag.** With no such prior review: every
+               changed line in the diff only replaces an image digest (`@sha256:...`) and keeps the
+               same tag or version, and nothing else in any file changes. Submit
+               `gh pr review --approve` with the heading, `**Verdict**: Safe to merge`, and one
+               sentence saying the change is a digest re-pin of the same tag.
+            3. **Anything else** (versions changed, packages added, a prior verdict you cannot read,
+               no prior review of these versions): do the full review below.
 
             ## Tool Use Efficiency
 
@@ -811,7 +1013,8 @@ jobs:
             - If unclear, research more rather than guess
             - When stuck (private repo, ambiguous package, no changelog anywhere), report what you
               found and what you could not find rather than fabricating information
-            - Submit exactly one `gh pr review` at the end of your analysis
+            - Submit exactly one `gh pr review` at the end of your analysis, on every run, including
+              the pre-check's short cases
             - When citing github.com URLs in the review body (PRs, issues, commits, releases, file
               or blob links), rewrite the host to `redirect.github.com` while keeping the full
               `https://` scheme (e.g. `https://redirect.github.com/rook/rook/releases/tag/v1.20.0`).
@@ -819,6 +1022,7 @@ jobs:
               issue/PR with a "mentioned in" notification. Non-github.com URLs are unaffected.
 
       - name: Publish review status
+        id: status
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -834,6 +1038,12 @@ jobs:
           TOKEN_REASON: ${{ steps.token_check.outputs.token_reason }}
           TOKEN_DETAIL: ${{ steps.token_check.outputs.token_detail }}
           EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
+          RERUN: ${{ steps.gate.outputs.rerun }}
+          RERUN_LABEL: ${{ inputs.rerun-label }}
+          STARTED: ${{ steps.gate.outputs.started }}
+          WF_STALE: ${{ steps.wfdrift.outputs.stale }}
+          WF_REBASE: ${{ steps.wfdrift.outputs.rebase }}
+          WF_PATH: ${{ steps.wfdrift.outputs.workflow }}
         run: |
           context="claude/renovate-review"
 
@@ -853,6 +1063,13 @@ jobs:
             # Digest-only or GitHub Actions bump - ungated, pass through.
             state="success"
             desc="Ungated update type (digest/github-actions) - auto-approved"
+          elif [[ "$WF_STALE" == "true" ]]; then
+            # Not a verdict. The branch carries an older copy of the calling
+            # workflow and a Renovate rebase has been requested (the check only
+            # defers when it has); the rebase push starts a fresh run that
+            # replaces this status.
+            state="pending"
+            desc="No review yet: ${WF_PATH##*/} is behind the base branch - Renovate rebase ${WF_REBASE:-requested}; the review runs after it"
           elif [[ "$TOKEN_STATE" == "invalid" ]]; then
             # Dead token: no review happened. Fail closed and block - the run also
             # fails red via the "Flag invalid token" step below. The two reasons need
@@ -902,6 +1119,12 @@ jobs:
             # timeout after the review went up), which an outcome gate would
             # have thrown away. SKIP and SHA are read from the environment
             # inside jq so the program stays single-quoted.
+            #
+            # A forced re-review (RERUN) narrows it further to reviews
+            # submitted since this run started: the head is usually the same
+            # commit the earlier verdict was posted against, and that verdict
+            # is exactly what the label asked to replace. Without this, a
+            # rerun that hit a mid-review 429 would pass on the old approval.
             if [[ "$SKIP" == "true" ]]; then
               echo "Verdict scope: latest review on the PR (diff unchanged since it was reviewed)"
             else
@@ -915,7 +1138,8 @@ jobs:
               resolved=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --slurp 2>/dev/null \
                 | jq -r '[(add // [])[] | select(.user.login == "claude[bot]" or .user.login == "github-actions[bot]")
                       | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED" or .state=="DISMISSED")
-                      | select(env.SKIP == "true" or .commit_id == env.SHA)]
+                      | select(env.SKIP == "true" or .commit_id == env.SHA)
+                      | select(env.RERUN != "true" or (.submitted_at // "") >= env.STARTED)]
                       | last
                       | if . == null then ""
                         elif .state != "DISMISSED" then .state
@@ -928,6 +1152,10 @@ jobs:
               echo "Attempt $attempt: resolved='' - retrying in 5s..."
               sleep 5
             done
+            # Tells the label step a forced review really produced a verdict.
+            if [[ "$RERUN" == "true" && -n "$resolved" ]]; then
+              echo "fresh_verdict=true" >> "$GITHUB_OUTPUT"
+            fi
             review_state="${resolved%%:*}"
             verdict_origin="${resolved#*:}"
             [[ "$verdict_origin" == "$resolved" ]] && verdict_origin="live"
@@ -943,11 +1171,27 @@ jobs:
             elif [[ "$review_state" == "CHANGES_REQUESTED" ]]; then
               state="failure"
               desc="Claude requested changes - manual review required"
+            elif [[ "$RERUN" == "true" ]]; then
+              # A forced re-review that produced no verdict this run. The
+              # verdict it was meant to replace no longer counts, and falling
+              # through to the transient-error pass-through below would turn a
+              # failed re-review of a rejected PR into a success. The label
+              # stays on, so a re-run reviews fresh again.
+              state="failure"
+              desc="Forced re-review posted no verdict (outcome=${CLAUDE_OUTCOME:-none}) - re-run; the rerun label stays on"
             elif [[ "$SKIP" == "true" ]]; then
               # Diff unchanged but the prior verdict vanished (review dismissed?).
               # Don't hard-block on a bookkeeping gap.
               state="success"
               desc="Diff unchanged since last review - prior verdict reused"
+            elif [[ "$CLAUDE_OUTCOME" == "success" && -z "${EXEC_FILE:-}" ]]; then
+              # The action returned success without ever running Claude (no
+              # execution file). Its workflow validation does this: it refuses
+              # to run unless the calling workflow matches the default branch
+              # as its service sees it, and exits 0. No review happened, so
+              # say that instead of blaming the reviewer.
+              state="failure"
+              desc="Claude action did not start (workflow validation, see the run log) - no review happened; re-run later or rebase the PR"
             elif [[ "$CLAUDE_OUTCOME" == "success" ]]; then
               # Claude ran cleanly but never posted a verdict (e.g. hit max-turns).
               # This is an anomaly worth a human look, not a transient blip - fail.
@@ -991,6 +1235,32 @@ jobs:
             fi
           fi
 
+          # Adding the rerun label cancels a routine run in flight on the same
+          # commit, and a cancelled run still reaches this step. Its success
+          # would stand until the forced run posts its pending status, long
+          # enough to auto-merge on the verdict the label is replacing. So a
+          # routine run re-reads the live labels before it posts a success.
+          # A lookup that keeps failing counts as "cannot tell": pending, so a
+          # re-run decides, rather than success on a verdict that may be
+          # superseded.
+          if [[ "$state" == "success" && "$GATED" == "true" && "$RERUN" != "true" ]]; then
+            live="" ; looked=false
+            for attempt in 1 2 3; do
+              if live=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join("\n")' 2>/dev/null); then
+                looked=true
+                break
+              fi
+              sleep 5
+            done
+            if [[ "$looked" != "true" ]]; then
+              state="pending"
+              desc="Could not re-read the PR labels before posting success - re-run this job"
+            elif grep -qxF -- "$RERUN_LABEL" <<<"$live"; then
+              state="pending"
+              desc="Superseded by a forced re-review (${RERUN_LABEL}) - waiting for that run"
+            fi
+          fi
+
           # The statuses API rejects descriptions over 140 chars (422), which
           # would drop the gate entirely - clamp rather than fail.
           desc="${desc:0:140}"
@@ -1011,7 +1281,7 @@ jobs:
       # directory in its Glob/Grep of the repo. The dotted path keeps it clear of
       # anything a caller might have at the workspace root.
       - name: Checkout usage reporter
-        if: always() && steps.gate.outputs.gated == 'true' && steps.fp.outputs.skip_claude != 'true'
+        if: always() && steps.gate.outputs.gated == 'true' && steps.wfdrift.outputs.stale != 'true' && steps.fp.outputs.skip_claude != 'true'
         continue-on-error: true
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1024,7 +1294,7 @@ jobs:
         # Skip when the Claude step was skipped (diff unchanged): there's no new
         # usage to report, and rewriting the sticky comment would drop the stored
         # fingerprint and defeat the next skip.
-        if: always() && steps.gate.outputs.gated == 'true' && steps.fp.outputs.skip_claude != 'true'
+        if: always() && steps.gate.outputs.gated == 'true' && steps.wfdrift.outputs.stale != 'true' && steps.fp.outputs.skip_claude != 'true'
         continue-on-error: true
         env:
           EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
@@ -1034,6 +1304,22 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: bash .shared-workflows/scripts/report-claude-usage.sh
+
+      - name: Remove rerun label
+        # Consume the label only once this run has posted a fresh verdict, so
+        # the next routine run goes back to reusing verdicts. Anything short
+        # of that (stale workflow awaiting a rebase, dead token, a usage limit
+        # mid-review, no verdict posted) leaves it on, and the next run still
+        # reviews fresh instead of falling back on the stored fingerprint and
+        # the verdict the label was meant to replace. Removing a label does
+        # not start a run: callers trigger on `labeled`, not `unlabeled`.
+        if: always() && steps.status.outputs.fresh_verdict == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          RERUN_LABEL: ${{ inputs.rerun-label }}
+        run: gh pr edit "$PR" --remove-label "$RERUN_LABEL"
 
       - name: Flag invalid token
         # Dead OAuth token: make the run go red with an annotation so it can't be
