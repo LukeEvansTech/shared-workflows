@@ -59,6 +59,22 @@ Gates Renovate auto-merge on a `claude/renovate-review` commit status. Extracted
   happened. Guarded by the `api_error_status` check at the top.
 - The reusable checks itself out at `job.workflow_sha` to run that script, for the same version-locking reason as the drift check — and does so AFTER the review step so the reviewer never globs `.shared-workflows/`.
 - `anthropics/claude-code-action` is pinned here, so Renovate bumps it once instead of four times.
+- **No run may end without a verdict or an explicit non-verdict.** The status step reads only
+  verdicts posted against the current head unless the fingerprint matched, so a reviewer that
+  stays silent blocks the PR for good. The prompt's pre-check therefore always submits a review:
+  when an earlier review covered the same versions (only a rebase or a digest re-pin of the
+  same tag since) it re-submits that verdict, a digest-only change under an unchanged tag with
+  no earlier review is approved, and anything else gets a full review.
+- **`renovate-review/rerun` label** (input `rerun-label`) forces a fresh review past the
+  fingerprint and the pre-check, and is removed once a review has been attempted. Callers must
+  trigger on `labeled`; the template's job `if:` and concurrency group ignore every other label.
+- **A stale caller workflow is rebased, not reviewed.** claude-code-action refuses to run when
+  the caller workflow differs from the default branch. If the PR's copy equals the merge-base
+  copy but not the base tip, the run ticks Renovate's rebase box and posts `pending` — but only
+  when every commit on the branch is Renovate's (merges must be clean merges of the base) and
+  the head has not moved; otherwise it reviews as before. Note 2026-09-06: a validation refusal
+  was seen on a head whose copy matched `main`, so drift is not its only trigger; a run whose
+  action exits without an execution file now says "did not start" in the status.
 
 ### The "zensical docs standard" + drift check
 

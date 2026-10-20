@@ -130,10 +130,10 @@ name: "Renovate PR Review"
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
 
 concurrency:
-  group: renovate-review-${{ github.event.pull_request.number }}
+  group: renovate-review-${{ github.event.pull_request.number }}${{ github.event.action == 'labeled' && github.event.label.name != 'renovate-review/rerun' && format('-label-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 permissions:
@@ -141,6 +141,7 @@ permissions:
 
 jobs:
   review:
+    if: github.event.action != 'labeled' || github.event.label.name == 'renovate-review/rerun'
     permissions:
       contents: read
       pull-requests: write
@@ -173,10 +174,32 @@ missing or empty context file fails the review closed.
 | `full-model`                 | string  | `claude-opus-5`                                          | Model for minor/major/high-blast-radius bumps                                 |
 | `max-turns`                  | number  | `60`                                                     | Turn ceiling for the reviewer                                                 |
 | `ungated-labels`             | string  | `type/digest\|renovate/github-action`                    | Renovate labels that skip review entirely                                     |
+| `rerun-label`                | string  | `renovate-review/rerun`                                  | PR label that forces a fresh review, then is removed                          |
 | `runner`                     | string  | `ubuntu-latest`                                          | Runner label to execute on                                                    |
 | `timeout-minutes`            | number  | `30`                                                     | Job timeout; a timeout mid-review hits the fail-open path                     |
 
 Exactly one of `blast-regex` or `blast-from-renovaterc` must yield a non-empty regular expression — an empty one would match every PR title, so the job fails loudly rather than silently mis-tiering every bump.
+
+### Forcing a fresh review
+
+The review reuses its last verdict while the PR diff is unchanged, so a fix that lands on the
+base branch cannot clear an earlier "changes requested" by itself. Add the
+`renovate-review/rerun` label to the PR: the run it starts ignores the stored fingerprint and
+the earlier verdict, reviews from scratch, and removes the label. The label must exist in the
+calling repository, and the caller has to trigger on `labeled` (the snippet above does, and runs
+nothing for any other label).
+
+### Out-of-date caller workflow
+
+Renovate rebases only on conflict here, so an older PR can carry a copy of the calling workflow
+that no longer matches the default branch, and the review action refuses to run under it. When
+the PR's copy differs from the base branch and the PR did not change it, the run ticks the
+Renovate rebase box in the PR body (nothing else in the body changes) and posts a `pending`
+status instead of a verdict. The rebase push starts the real review. It does not ask for a
+rebase when that could lose work: a commit not made by Renovate, a merge that is not a clean
+merge of the base branch, or a head that has moved since the run started. In those cases, and
+when the box is missing, it reviews as before and logs a warning. If the review action refuses
+to start anyway, the status says so rather than blaming the reviewer.
 
 ### Failure modes
 

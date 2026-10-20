@@ -18,9 +18,13 @@ on:
       - opened
       - synchronize
       - reopened
+      # Adding the `renovate-review/rerun` label forces a fresh review.
+      - labeled
 
+# Any other label gets a group of its own, so labelling a PR never cancels a
+# review in flight; its run is then skipped by the job's `if:` below.
 concurrency:
-  group: renovate-review-${{ github.event.pull_request.number }}
+  group: renovate-review-${{ github.event.pull_request.number }}${{ github.event.action == 'labeled' && github.event.label.name != 'renovate-review/rerun' && format('-label-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 # Top-level read-only (zizmor excessive-permissions / CKV2_GHA_1).
@@ -29,6 +33,7 @@ permissions:
 
 jobs:
   review:
+    if: github.event.action != 'labeled' || github.event.label.name == 'renovate-review/rerun'
     # Per-job write scopes: post the review, set the gating commit status.
     # The reusable needs at least these or the run fails with startup_failure.
     permissions:
