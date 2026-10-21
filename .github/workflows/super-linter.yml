@@ -518,9 +518,10 @@ jobs:
         #
         # super-linter reads .github/linters/actionlint.yml. A caller without
         # one gets a file holding only the label; a caller with one but no
-        # self-hosted-runner key gets the key appended; a caller that lists its
-        # own labels as a block list gets ubuntu-26.04 added to that list. Any
-        # other shape (a flow list, say) is left alone with a warning.
+        # self-hosted-runner key gets the key appended (plain block mappings
+        # only); a caller that lists its own labels as a block list gets
+        # ubuntu-26.04 added to that list. Any other shape (a flow list or
+        # mapping, a quoted key) is left alone with a warning.
         shell: bash
         run: |
           mkdir -p .github/linters
@@ -554,10 +555,15 @@ jobs:
                 echo "::warning file=$cfg::could not add ubuntu-26.04 to the caller's self-hosted-runner labels; add it there if any workflow runs on it"
               fi
             fi
-          else
+          elif ! LC_ALL=C grep -Evq '^([A-Za-z_][A-Za-z0-9_-]*:([[:space:]].*)?|[[:space:]].*|#.*|---[[:space:]]*|)$' "$cfg"; then
+            # Append only to a plain block mapping (every line a bare top-level
+            # key, indented, a comment or a document marker); anything else is
+            # left alone below.
             if [ -n "$(tail -c1 "$cfg")" ]; then echo >> "$cfg"; fi
             printf '%s\n' 'self-hosted-runner:' '  labels:' '    - ubuntu-26.04' >> "$cfg"
             echo "appended the ubuntu-26.04 runner label to caller's $cfg"
+          else
+            echo "::warning file=$cfg::caller's actionlint config is not a plain block mapping; add ubuntu-26.04 under self-hosted-runner.labels if any workflow runs on it"
           fi
 
       - name: Super-Linter
