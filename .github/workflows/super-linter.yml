@@ -518,9 +518,9 @@ jobs:
         #
         # super-linter reads .github/linters/actionlint.yml. A caller without
         # one gets a file holding only the label; a caller with one but no
-        # self-hosted-runner key gets the key appended; a caller that already
-        # lists its own runner labels keeps them, and a warning says to add
-        # ubuntu-26.04 there.
+        # self-hosted-runner key gets the key appended; a caller that lists its
+        # own labels as a block list gets ubuntu-26.04 added to that list. Any
+        # other shape (a flow list, say) is left alone with a warning.
         shell: bash
         run: |
           mkdir -p .github/linters
@@ -532,7 +532,22 @@ jobs:
             if grep -Eq '^[[:space:]]*-[[:space:]]*["'\'']?ubuntu-26\.04["'\'']?[[:space:]]*$' "$cfg"; then
               echo "caller's $cfg already lists ubuntu-26.04"
             else
-              echo "::warning file=$cfg::caller lists its own self-hosted-runner labels; add ubuntu-26.04 there if any workflow runs on it"
+              # Insert the label as the first item of the block list under
+              # self-hosted-runner.labels, at the indent of the item below it.
+              awk '
+                /^self-hosted-runner:[[:space:]]*$/ { in_shr = 1; print; next }
+                in_shr && /^[^[:space:]#]/ { in_shr = 0 }
+                in_shr && /^[[:space:]]+labels:[[:space:]]*$/ { want = 1; print; next }
+                want && /^[[:space:]]*-[[:space:]]/ {
+                  match($0, /^[[:space:]]*/)
+                  printf "%s- ubuntu-26.04\n", substr($0, 1, RLENGTH)
+                  want = 0; done = 1
+                }
+                { print }
+                END { if (!done) exit 3 }
+              ' "$cfg" > "$cfg.staged" && mv "$cfg.staged" "$cfg" \
+                && echo "added the ubuntu-26.04 runner label to caller's $cfg" \
+                || { rm -f "$cfg.staged"; echo "::warning file=$cfg::could not add ubuntu-26.04 to the caller's self-hosted-runner labels; add it there if any workflow runs on it"; }
             fi
           else
             if [ -n "$(tail -c1 "$cfg")" ]; then echo >> "$cfg"; fi
