@@ -508,6 +508,38 @@ jobs:
             echo "staged shared .ruff.toml -> .github/linters/.ruff.toml"
           fi
 
+      - name: Stage shared actionlint runner labels for super-linter
+        # actionlint 1.7.12, the latest release and the one super-linter v8.6.0
+        # bundles, predates the ubuntu-26.04 GitHub-hosted image and fails any
+        # workflow that runs on it with `label "ubuntu-26.04" is unknown`.
+        # Listing the label under self-hosted-runner is actionlint's documented
+        # way to add one. Remove this step once super-linter ships an actionlint
+        # that knows the label.
+        #
+        # super-linter reads .github/linters/actionlint.yml. A caller without
+        # one gets a file holding only the label; a caller with one but no
+        # self-hosted-runner key gets the key appended; a caller that already
+        # lists its own runner labels keeps them, and a warning says to add
+        # ubuntu-26.04 there.
+        shell: bash
+        run: |
+          mkdir -p .github/linters
+          cfg=.github/linters/actionlint.yml
+          if [ ! -f "$cfg" ]; then
+            printf '%s\n' 'self-hosted-runner:' '  labels:' '    - ubuntu-26.04' > "$cfg"
+            echo "staged shared actionlint.yml (ubuntu-26.04 label) -> $cfg"
+          elif grep -Eq '^self-hosted-runner:' "$cfg"; then
+            if grep -Eq '^[[:space:]]*-[[:space:]]*["'\'']?ubuntu-26\.04["'\'']?[[:space:]]*$' "$cfg"; then
+              echo "caller's $cfg already lists ubuntu-26.04"
+            else
+              echo "::warning file=$cfg::caller lists its own self-hosted-runner labels; add ubuntu-26.04 there if any workflow runs on it"
+            fi
+          else
+            if [ -n "$(tail -c1 "$cfg")" ]; then echo >> "$cfg"; fi
+            printf '%s\n' 'self-hosted-runner:' '  labels:' '    - ubuntu-26.04' >> "$cfg"
+            echo "appended the ubuntu-26.04 runner label to caller's $cfg"
+          fi
+
       - name: Super-Linter
         uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8.6.0
         continue-on-error: ${{ inputs.soft-launch }}
