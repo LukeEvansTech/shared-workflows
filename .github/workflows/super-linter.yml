@@ -528,7 +528,7 @@ jobs:
           if [ ! -f "$cfg" ]; then
             printf '%s\n' 'self-hosted-runner:' '  labels:' '    - ubuntu-26.04' > "$cfg"
             echo "staged shared actionlint.yml (ubuntu-26.04 label) -> $cfg"
-          elif grep -Eq '^self-hosted-runner:' "$cfg"; then
+          elif grep -Eq '^["'\'']?self-hosted-runner["'\'']?[[:space:]]*:' "$cfg"; then
             if grep -Eq '^[[:space:]]*-[[:space:]]*["'\'']?ubuntu-26\.04["'\'']?[[:space:]]*$' "$cfg"; then
               echo "caller's $cfg already lists ubuntu-26.04"
             else
