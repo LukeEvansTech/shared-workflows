@@ -534,20 +534,25 @@ jobs:
             else
               # Insert the label as the first item of the block list under
               # self-hosted-runner.labels, at the indent of the item below it.
-              awk '
+              if awk '
                 /^self-hosted-runner:[[:space:]]*$/ { in_shr = 1; print; next }
-                in_shr && /^[^[:space:]#]/ { in_shr = 0 }
+                in_shr && /^[^[:space:]#]/ { in_shr = 0; want = 0 }
                 in_shr && /^[[:space:]]+labels:[[:space:]]*$/ { want = 1; print; next }
-                want && /^[[:space:]]*-[[:space:]]/ {
+                in_shr && want && /^[[:space:]]+[^-[:space:]#]/ { want = 0 }
+                in_shr && want && /^[[:space:]]*-[[:space:]]/ {
                   match($0, /^[[:space:]]*/)
                   printf "%s- ubuntu-26.04\n", substr($0, 1, RLENGTH)
                   want = 0; done = 1
                 }
                 { print }
                 END { if (!done) exit 3 }
-              ' "$cfg" > "$cfg.staged" && mv "$cfg.staged" "$cfg" \
-                && echo "added the ubuntu-26.04 runner label to caller's $cfg" \
-                || { rm -f "$cfg.staged"; echo "::warning file=$cfg::could not add ubuntu-26.04 to the caller's self-hosted-runner labels; add it there if any workflow runs on it"; }
+              ' "$cfg" > "$cfg.staged"; then
+                mv "$cfg.staged" "$cfg"
+                echo "added the ubuntu-26.04 runner label to caller's $cfg"
+              else
+                rm -f "$cfg.staged"
+                echo "::warning file=$cfg::could not add ubuntu-26.04 to the caller's self-hosted-runner labels; add it there if any workflow runs on it"
+              fi
             fi
           else
             if [ -n "$(tail -c1 "$cfg")" ]; then echo >> "$cfg"; fi
