@@ -508,6 +508,64 @@ jobs:
             echo "staged shared .ruff.toml -> .github/linters/.ruff.toml"
           fi
 
+      - name: Stage shared actionlint runner labels for super-linter
+        # actionlint 1.7.12, the latest release and the one super-linter v8.6.0
+        # bundles, predates the ubuntu-26.04 GitHub-hosted image and fails any
+        # workflow that runs on it with `label "ubuntu-26.04" is unknown`.
+        # Listing the label under self-hosted-runner is actionlint's documented
+        # way to add one. Remove this step once super-linter ships an actionlint
+        # that knows the label.
+        #
+        # super-linter reads .github/linters/actionlint.yml. A caller without
+        # one gets a file holding only the label; a caller with one but no
+        # self-hosted-runner key gets the key appended (plain block mappings
+        # only); a caller that lists its own labels as a block list gets
+        # ubuntu-26.04 added to that list. Any other shape (a flow list or
+        # mapping, a quoted key) is left alone with a warning.
+        shell: bash
+        run: |
+          mkdir -p .github/linters
+          cfg=.github/linters/actionlint.yml
+          if [ ! -f "$cfg" ]; then
+            printf '%s\n' 'self-hosted-runner:' '  labels:' '    - ubuntu-26.04' > "$cfg"
+            echo "staged shared actionlint.yml (ubuntu-26.04 label) -> $cfg"
+          elif grep -Eq '^["'\'']?self-hosted-runner["'\'']?[[:space:]]*:' "$cfg"; then
+            if grep -Eq '^[[:space:]]*-[[:space:]]*["'\'']?ubuntu-26\.04["'\'']?[[:space:]]*$' "$cfg"; then
+              echo "caller's $cfg already lists ubuntu-26.04"
+            else
+              # Insert the label as the first item of the block list under
+              # self-hosted-runner.labels, at the indent of the item below it.
+              if awk '
+                /^self-hosted-runner:[[:space:]]*$/ { in_shr = 1; print; next }
+                in_shr && /^[^[:space:]#]/ { in_shr = 0; want = 0 }
+                in_shr && /^[[:space:]]+labels:[[:space:]]*$/ { want = 1; print; next }
+                in_shr && want && /^[[:space:]]+[^-[:space:]#]/ { want = 0 }
+                in_shr && want && /^[[:space:]]*-[[:space:]]/ {
+                  match($0, /^[[:space:]]*/)
+                  printf "%s- ubuntu-26.04\n", substr($0, 1, RLENGTH)
+                  want = 0; done = 1
+                }
+                { print }
+                END { if (!done) exit 3 }
+              ' "$cfg" > "$cfg.staged"; then
+                mv "$cfg.staged" "$cfg"
+                echo "added the ubuntu-26.04 runner label to caller's $cfg"
+              else
+                rm -f "$cfg.staged"
+                echo "::warning file=$cfg::could not add ubuntu-26.04 to the caller's self-hosted-runner labels; add it there if any workflow runs on it"
+              fi
+            fi
+          elif ! LC_ALL=C grep -Evq '^([A-Za-z_][A-Za-z0-9_-]*:([[:space:]].*)?|[[:space:]].*|#.*|---[[:space:]]*|)$' "$cfg"; then
+            # Append only to a plain block mapping (every line a bare top-level
+            # key, indented, a comment or a document marker); anything else is
+            # left alone below.
+            if [ -n "$(tail -c1 "$cfg")" ]; then echo >> "$cfg"; fi
+            printf '%s\n' 'self-hosted-runner:' '  labels:' '    - ubuntu-26.04' >> "$cfg"
+            echo "appended the ubuntu-26.04 runner label to caller's $cfg"
+          else
+            echo "::warning file=$cfg::caller's actionlint config is not a plain block mapping; add ubuntu-26.04 under self-hosted-runner.labels if any workflow runs on it"
+          fi
+
       - name: Super-Linter
         uses: super-linter/super-linter@9e863354e3ff62e0727d37183162c4a88873df41 # v8.6.0
         continue-on-error: ${{ inputs.soft-launch }}
