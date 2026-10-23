@@ -1207,7 +1207,7 @@ jobs:
               # after it, Claude included. Claude never got a chance to run, so
               # there is no verdict to pass through - fail closed like every
               # other "Claude didn't review this" case, per the fail-closed
-              # design this workflow exists to enforce (see CLAUDE.md).
+              # design this workflow exists to enforce (see AGENTS.md).
               state="failure"
               desc="A prerequisite step failed before Claude could run - check the workflow run, review manually"
             else
