@@ -787,7 +787,11 @@ jobs:
           # protects nothing. The token is a read-scoped Claude OAuth token, not a cloud
           # credential. Suppressed with justification.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }} # zizmor: ignore[secrets-outside-env]
-          allowed_bots: "renovate[bot]"
+          # github-actions[bot] starts the review when a caller's own workflow pushes to the
+          # Renovate branch with GITHUB_TOKEN (seedbox-apps regenerates seedbox.ign that way).
+          # Without it the action refuses the run, and the PR carries a red check even though
+          # the verdict status is green. Only same-repo workflows act as this bot.
+          allowed_bots: "renovate[bot],github-actions[bot]"
           show_full_output: true
           # (Comments cannot live inside claude_args — it is a literal block whose
           # lines are passed to the CLI as arguments. See the `max-turns` input
